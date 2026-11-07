@@ -1,0 +1,2 @@
+# Transient lock files written by the CLI while editing settings
+settings/*.lock
