@@ -1,0 +1,70 @@
+# Local infra for the quiz game (plan §11): PostgreSQL + API + Caddy TLS proxy.
+# Usage:
+#   cp .env.example .env   # then edit secrets
+#   docker compose up --build
+# Reset the database:
+#   docker compose down -v
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: src/QuizGame.Server/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      Jwt__Key: ${Jwt__Key}
+      Jwt__Issuer: ${Jwt__Issuer}
+      Jwt__Audience: ${Jwt__Audience}
+      Seed__AdminUsername: ${Seed__AdminUsername}
+      Seed__AdminPassword: ${Seed__AdminPassword}
+      AllowRegistration: ${AllowRegistration}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # The runtime image has no curl; use the .NET runtime to probe /health.
+      test: ["CMD-SHELL", "dotnet QuizGame.Server.dll --health-check || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    expose:
+      - "8080"
+
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

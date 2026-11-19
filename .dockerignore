@@ -1,0 +1,15 @@
+# Keep build context small and reproducible.
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/.idea/
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+docs/
+tests/
+**/*.user
+**/node_modules/

@@ -1,0 +1,16 @@
+# Caddy terminates TLS and reverse-proxies to the API (plan §8, §11, D10).
+# For a LAN demo Caddy issues its own internal CA cert (`tls internal`);
+# install that CA on the phones, or front this with a tunnel that provides
+# a publicly trusted certificate.
+#
+# Override the site address at runtime with the SITE_ADDRESS env var,
+# e.g. SITE_ADDRESS=quiz.example.com for a real domain with automatic HTTPS.
+
+{$SITE_ADDRESS:localhost} {
+	tls internal
+
+	# WebSocket upgrades (SignalR) are handled automatically by reverse_proxy.
+	reverse_proxy api:8080
+
+	encode gzip
+}

@@ -1,0 +1,63 @@
+# ── .NET build output ────────────────────────────────────────────────
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.user
+*.suo
+*.userprefs
+
+# Build / test artifacts
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coverpackage
+BenchmarkDotNet.Artifacts/
+artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+.packages/
+packages/
+*.nuget.props
+*.nuget.targets
+
+# ── Secrets & local config (NEVER commit) ────────────────────────────
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+secrets.json
+*.pfx
+*.key
+*.pem
+
+# ── EF Core ──────────────────────────────────────────────────────────
+# Migrations ARE committed (they are source). Nothing to ignore here;
+# this section exists so no one adds a blanket ignore by mistake.
+
+# ── WPF / desktop client ─────────────────────────────────────────────
+*.pidb
+*.booproj
+*.svd
+
+# ── Node (vendored SignalR only; no build step, but just in case) ────
+node_modules/
+npm-debug.log*
+
+# ── IDE / editor ─────────────────────────────────────────────────────
+.vs/
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.DS_Store
+Thumbs.db
+
+# ── Docker ───────────────────────────────────────────────────────────
+# docker-compose.yml and Dockerfiles ARE committed. Local volume data
+# (if ever bind-mounted) goes here:
+/pgdata/
