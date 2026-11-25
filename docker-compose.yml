@@ -36,6 +36,9 @@ services:
       Seed__AdminUsername: ${Seed__AdminUsername}
       Seed__AdminPassword: ${Seed__AdminPassword}
       AllowRegistration: ${AllowRegistration}
+      # Public URL players reach (the Cloudflare tunnel address). Set it so join links / QR codes
+      # are correct. Leave empty to fall back to forwarded Host. See README "Run the whole app".
+      PublicBaseUrl: ${PublicBaseUrl:-}
     depends_on:
       db:
         condition: service_healthy
@@ -46,11 +49,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    expose:
-      - "8080"
+    # Published on the host so a Cloudflare tunnel (cloudflared --url http://localhost:8080)
+    # can reach the API directly. The Caddy proxy service below is optional and off by default
+    # (profile "caddy"); Cloudflare terminates TLS at its edge, so no local reverse proxy is needed.
+    ports:
+      - "8080:8080"
 
   proxy:
     image: caddy:2
+    # Optional, off by default. We use a Cloudflare tunnel for public HTTPS instead.
+    # Start it explicitly only if you want local Caddy TLS: docker compose --profile caddy up
+    profiles: ["caddy"]
     restart: unless-stopped
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-localhost}

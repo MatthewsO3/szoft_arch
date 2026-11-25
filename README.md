@@ -2,19 +2,66 @@
 
 ## Room system (create a room, join with the 6-digit code)
 
+### Run the whole app (server + host + Cloudflare tunnel)
+
+This is the full test setup: the API and database in Docker, the game master on WPF, and a Cloudflare
+tunnel giving players a public HTTPS URL. The question bank is seeded automatically (42 questions, 5
+categories) on the first database start.
+
+**1. Server + database (Docker).** Copy `.env.example` to `.env` and fill the secrets, then:
+
 ```bash
-# server (dev login admin/admin comes from appsettings.Development.json)
-dotnet run --project src/QuizGame.Server --launch-profile lan     # http://0.0.0.0:5084, reachable from phones on the LAN
-
-# game master (Windows): log in, press "Create room", read the code
-dotnet run --project src/QuizGame.Host                            # server URL: http://localhost:5084
-
-# players: open http://<PC-LAN-IP>:5084 on a phone, enter code + name
+docker compose up -d            # starts db + api; api is published on http://localhost:8080
+docker compose logs -f api      # watch for "Seeded 42 question(s)" and "Now listening"
+curl http://localhost:8080/health
 ```
 
-Phones cannot reach `localhost`: use the PC's IPv4 address (`ipconfig`), allow port 5084 in Windows Firewall
-(`netsh advfirewall firewall add rule name="QuizGame 5084" dir=in action=allow protocol=TCP localport=5084`),
-and log in from the host app with that same URL so the join link shows it.
+The Caddy proxy is off by default (we use Cloudflare instead). Reset the database and re-seed with
+`docker compose down -v` then `docker compose up -d`.
+
+**2. Cloudflare tunnel.** Run it in its own terminal (keep it open for the whole session) and copy the
+printed URL:
+
+```bash
+cloudflared tunnel --url http://localhost:8080
+# → https://<random-name>.trycloudflare.com
+```
+
+Leave `PublicBaseUrl` **empty** in `.env`: the server reads Cloudflare's forwarded `Host`/`Proto` headers, so
+join links and the QR code match the live tunnel URL automatically, with no api restart. Only set
+`PublicBaseUrl` (and `docker compose up -d api`) if you use a stable named tunnel or custom domain.
+
+**3. Game master (WPF, Windows).** Log in with the public URL so the host and players hit the same origin:
+
+```bash
+dotnet run --project src/QuizGame.Host     # server URL: https://<random-name>.trycloudflare.com
+```
+
+Log in as `admin` (password from `Seed__AdminPassword` in `.env`), press **Create room**, read the code.
+
+**4. Players.** Open the `https://<random-name>.trycloudflare.com` URL (or scan the QR), enter the code and a
+name. Cloudflare terminates TLS, so SignalR runs over WSS automatically.
+
+> The quick tunnel name changes on every `cloudflared` run. For a stable demo URL use a named Cloudflare
+> tunnel or a VPS/domain and set `PublicBaseUrl` to it.
+
+### Same-Wi-Fi alternative (no tunnel, dev server)
+
+For a quick LAN-only test you can skip Docker and the tunnel and run the dev server directly. Note this
+**Development** fallback uses the in-memory store with an **empty question bank** unless you point it at
+Postgres via `ConnectionStrings__Default`.
+
+```bash
+dotnet run --project src/QuizGame.Server --launch-profile lan   # http://0.0.0.0:5084
+# phone: http://<PC-LAN-IP>:5084  (find the IP with ipconfig)
+```
+
+Allow the port in Windows Firewall and log into the host with that same `http://<PC-LAN-IP>:5084` URL so the
+join link shows it:
+
+```
+netsh advfirewall firewall add rule name="QuizGame 5084" dir=in action=allow protocol=TCP localport=5084
+```
 
 End-to-end check (needs a running server): `cd tests/smoke && npm install && node smoke.mjs`.
 Endpoints, hub events and error codes: [docs/api-contract.md](docs/api-contract.md).
@@ -59,16 +106,15 @@ Startup applies migrations, seeds `Seed__AdminUsername` / `Seed__AdminPassword` 
 
 ### Players on other networks
 
-Same Wi-Fi: use the `lan` launch profile and open `http://<PC-LAN-IP>:5084` (allow the port in Windows Firewall).
-Different networks: run `cloudflared tunnel --url http://localhost:5084` and give players the printed
-`https://….trycloudflare.com` URL (log into the host with that URL, or set `PublicBaseUrl`, so the join link/QR is correct).
-For a stable demo use a VPS/domain and set `SITE_ADDRESS` for Caddy.
+Different networks: run `cloudflared tunnel --url http://localhost:8080` (Docker stack) and give players the
+printed `https://….trycloudflare.com` URL. Set `PublicBaseUrl` to it (and log into the host with that URL) so
+the join link and QR code are correct. Full steps: "Run the whole app" above.
 
 ### Security (room system)
 
 | Area | What is done |
 |---|---|
-| HTTPS / WSS | Public access only over HTTPS: Caddy (`proxy/Caddyfile`) in Docker, or a Cloudflare tunnel (`cloudflared tunnel --url http://localhost:5084`) which terminates TLS with a publicly trusted certificate. SignalR then runs over WSS. `X-Forwarded-Proto` is honoured, so join links are `https://…`. |
+| HTTPS / WSS | Public access over HTTPS via a Cloudflare tunnel (`cloudflared tunnel --url http://localhost:8080`), which terminates TLS with a publicly trusted certificate; SignalR then runs over WSS. `X-Forwarded-Proto` is honoured, so join links are `https://…`. A local Caddy proxy (`proxy/Caddyfile`, compose profile `caddy`) is available as an alternative but off by default. |
 | Authentication | Game masters log in against the database; passwords are salted PBKDF2-SHA256 (600k iterations), compared in constant time, unknown users cost the same time as wrong passwords. Signed HS256 JWTs (alg pinned, iss/aud/exp checked); players get a token bound to one room. |
 | Authorization | `GameMasterOnly` / `PlayerOnly` policies; a game master can only manage rooms they created; hub group membership comes from token claims, never from client input. |
 | Input validation | Room code must be exactly 6 digits; player name 1–20 characters, no duplicates; room settings range-checked; password length capped; request bodies are typed DTOs. |
