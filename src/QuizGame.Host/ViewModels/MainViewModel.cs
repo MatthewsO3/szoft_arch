@@ -39,9 +39,16 @@ public sealed class MainViewModel : ViewModelBase
     private string _roomCode = "";
     private string _joinUrl = "";
     private bool _loggedIn;
+    private int _selectedTabIndex;
 
-    public MainViewModel()
+    public MainViewModel() : this(new WpfQuestionBankDialogService())
     {
+    }
+
+    public MainViewModel(IQuestionBankDialogService questionBankDialogs)
+    {
+        QuestionBank = new QuestionBankViewModel(questionBankDialogs);
+
         LoginCommand = new AsyncRelayCommand(_ => LoginAsync(), onError: ShowError);
         LogoutCommand = new AsyncRelayCommand(_ => LogoutAsync(), onError: ShowError);
         CreateRoomCommand = new AsyncRelayCommand(_ => CreateRoomAsync(), onError: ShowError);
@@ -58,6 +65,7 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     public ObservableCollection<PlayerItem> Players { get; } = [];
+    public QuestionBankViewModel QuestionBank { get; }
 
     public ICommand LoginCommand { get; }
     public ICommand LogoutCommand { get; }
@@ -90,6 +98,17 @@ public sealed class MainViewModel : ViewModelBase
     public bool ShowRoom => _loggedIn;
     public string PlayerCountText => $"Players ({Players.Count})";
 
+    public int SelectedTabIndex
+    {
+        get => _selectedTabIndex;
+        set
+        {
+            if (!Set(ref _selectedTabIndex, value)) return;
+            if (value == 1 && _loggedIn)
+                _ = QuestionBank.EnsureLoadedAsync();
+        }
+    }
+
     private void OnUi(Action action) => _ui.Post(_ => action(), null);
 
     private void ShowError(Exception ex) => OnUi(() => ErrorMessage = ex.Message);
@@ -113,6 +132,7 @@ public sealed class MainViewModel : ViewModelBase
             _api = api;
             _token = login.Token;
             ServerUrl = api.BaseUrl;
+            QuestionBank.AttachApi(api);
         }
         catch
         {
@@ -120,6 +140,7 @@ public sealed class MainViewModel : ViewModelBase
             throw;
         }
 
+        SelectedTabIndex = 0;
         ConnectionStatus = "Logged in";
         SetLoggedIn(true);
     }
@@ -127,6 +148,8 @@ public sealed class MainViewModel : ViewModelBase
     private async Task LogoutAsync()
     {
         await CloseRoomAsync();
+        QuestionBank.Reset();
+        SelectedTabIndex = 0;
         _api?.Dispose();
         _api = null;
         _token = null;
