@@ -21,6 +21,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.Section));
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.Section));
 builder.Services.Configure<RoomOptions>(builder.Configuration.GetSection(RoomOptions.Section));
+builder.Services.Configure<RoundOptions>(builder.Configuration.GetSection(RoundOptions.Section));
 
 foreach (var required in new[] { "Jwt:Key", "Seed:AdminUsername", "Seed:AdminPassword" })
 {
@@ -49,6 +50,10 @@ else
     throw new InvalidOperationException("Missing configuration 'ConnectionStrings:Default' (env ConnectionStrings__Default, see .env.example).");
 builder.Services.AddSingleton<GameRoomManager>();
 builder.Services.AddSingleton<ConnectionRegistry>();
+builder.Services.AddSingleton<RoundCoordinator>();
+
+// Question source for rounds: the question bank (EF Core, or in-memory in Development without a database).
+builder.Services.AddSingleton<IQuestionProvider, BankQuestionProvider>();
 builder.Services.AddHostedService<RoomCleanupService>();
 
 builder.Services.AddControllers();

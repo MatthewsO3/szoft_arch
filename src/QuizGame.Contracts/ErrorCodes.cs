@@ -16,10 +16,23 @@ public static class ErrorCodes
     public const string InvalidSettings = "InvalidSettings";
     public const string NotAuthorized = "NotAuthorized";
     public const string NotAttached = "NotAttached";
+
+    // Question rounds (plan §4.2, §4.5, §7.3)
+    public const string InvalidPhase = "InvalidPhase";
+    public const string NotEnoughPlayers = "NotEnoughPlayers";
+    public const string AnswerTooLate = "AnswerTooLate";
+    public const string AlreadyAnswered = "AlreadyAnswered";
+    public const string QuestionNotFound = "QuestionNotFound";
+    public const string RoundInProgress = "RoundInProgress";
+    public const string NoActiveRound = "NoActiveRound";
+    public const string InvalidRound = "InvalidRound";
+    public const string InvalidAnswer = "InvalidAnswer";
+    public const string NotParticipant = "NotParticipant";
+
+    // Question bank (REST)
     public const string CategoryNotFound = "CategoryNotFound";
     public const string CategoryNameTaken = "CategoryNameTaken";
     public const string CategoryInUse = "CategoryInUse";
-    public const string QuestionNotFound = "QuestionNotFound";
     public const string InvalidQuestion = "InvalidQuestion";
     public const string InvalidCategory = "InvalidCategory";
 }

@@ -19,6 +19,7 @@ public sealed class GameHub(
     ConnectionRegistry registry,
     TimeProvider time,
     ISessionRecorder recorder,
+    RoundCoordinator rounds,
     ILogger<GameHub> logger) : Hub
 {
     public override async Task OnConnectedAsync()
@@ -58,6 +59,7 @@ public sealed class GameHub(
         room.Touch(time.GetUtcNow());
 
         await Clients.Caller.SendAsync(HubNames.Events.RoomState, room.Snapshot(time.GetUtcNow()));
+        await rounds.SendOpenRoundAsync(room, Clients.Caller, null);
     }
 
     /// <summary>
@@ -76,6 +78,7 @@ public sealed class GameHub(
         if (info is null || !rooms.TryGet(info.RoomCode, out var room))
             throw new HubException(ErrorCodes.NotAttached);
         await Clients.Caller.SendAsync(HubNames.Events.RoomState, room.Snapshot(time.GetUtcNow()));
+        await rounds.SendOpenRoundAsync(room, Clients.Caller, null);
     }
 
     [Authorize(Policy = Policies.GameMasterOnly)]
@@ -107,8 +110,50 @@ public sealed class GameHub(
             await Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.PlayerLeft, removed);
     }
 
+    /// <summary>Host opens a question round (plan §4.2). The server pushes <c>QuestionStarted</c> to each audience.</summary>
+    [Authorize(Policy = Policies.GameMasterOnly)]
+    public async Task SendQuestion(SendQuestionRequest request)
+    {
+        var room = HostRoom();
+        if (request is null) throw new HubException(ErrorCodes.InvalidRound);
+
+        var error = await rounds.StartAsync(room, request, Context.ConnectionAborted);
+        if (error is not null) throw new HubException(error);
+    }
+
+    /// <summary>Host ends the round early; <c>RoundClosed</c> goes to the whole room.</summary>
+    [Authorize(Policy = Policies.GameMasterOnly)]
+    public async Task CloseRound()
+    {
+        var room = HostRoom();
+        if (!await rounds.CloseAsync(room)) throw new HubException(ErrorCodes.NoActiveRound);
+    }
+
+    /// <summary>A player's answer. The receive time is stamped here, on entry, never taken from the client (plan §7.2).</summary>
+    [Authorize(Policy = Policies.PlayerOnly)]
+    public async Task SubmitAnswer(SubmitAnswerRequest request)
+    {
+        var receivedAt = time.GetUtcNow();
+
+        var info = registry.Get(Context.ConnectionId);
+        if (info?.PlayerId is not { } playerId || !rooms.TryGet(info.RoomCode, out var room))
+            throw new HubException(ErrorCodes.NotAttached);
+        if (request is null) throw new HubException(ErrorCodes.InvalidAnswer);
+
+        var error = await rounds.SubmitAsync(room, playerId, request, receivedAt);
+        if (error is not null) throw new HubException(error);
+    }
+
     /// <summary>Latency / keepalive and clock sync (plan §7.3).</summary>
     public DateTimeOffset Ping() => time.GetUtcNow();
+
+    private GameRoom HostRoom()
+    {
+        var info = registry.Get(Context.ConnectionId);
+        if (info is not { Role: Roles.GameMaster } || !rooms.TryGet(info.RoomCode, out var room))
+            throw new HubException(ErrorCodes.NotAttached);
+        return room;
+    }
 
     private async Task AttachPlayerAsync()
     {
@@ -138,6 +183,7 @@ public sealed class GameHub(
             await Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.PlayerConnectionChanged, changed);
 
         await Clients.Caller.SendAsync(HubNames.Events.RoomState, room.Snapshot(time.GetUtcNow()));
+        await rounds.SendOpenRoundAsync(room, Clients.Caller, playerId);
     }
 
     private async Task RemovePlayerConnectionsAsync(string code, Guid playerId, string? notifyEvent)

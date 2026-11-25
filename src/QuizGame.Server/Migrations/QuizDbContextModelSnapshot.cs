@@ -22,6 +22,45 @@ namespace QuizGame.Server.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("QuizGame.Server.Data.AnswerEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChosenOption")
+                        .HasMaxLength(1)
+                        .HasColumnType("character varying(1)");
+
+                    b.Property<decimal?>("Distance")
+                        .HasColumnType("numeric");
+
+                    b.Property<bool?>("IsCorrect")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("NumericValue")
+                        .HasColumnType("numeric");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RoundId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoundId", "PlayerId")
+                        .IsUnique();
+
+                    b.ToTable("Answers", (string)null);
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.CategoryEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -220,6 +259,66 @@ namespace QuizGame.Server.Migrations
                     b.ToTable("QuestionOptions", (string)null);
                 });
 
+            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AttackerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("Deadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DefenderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TargetTerritoryIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("WinnerPlayerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "Seq")
+                        .IsUnique();
+
+                    b.ToTable("Rounds", (string)null);
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.AnswerEntity", b =>
+                {
+                    b.HasOne("QuizGame.Server.Data.RoundEntity", "Round")
+                        .WithMany("Answers")
+                        .HasForeignKey("RoundId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Round");
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.GameSessionEntity", b =>
                 {
                     b.HasOne("QuizGame.Server.Data.GameMasterEntity", "GameMaster")
@@ -235,6 +334,17 @@ namespace QuizGame.Server.Migrations
                 {
                     b.HasOne("QuizGame.Server.Data.GameSessionEntity", "Session")
                         .WithMany("Players")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
+                {
+                    b.HasOne("QuizGame.Server.Data.GameSessionEntity", "Session")
+                        .WithMany("Rounds")
                         .HasForeignKey("SessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -277,6 +387,13 @@ namespace QuizGame.Server.Migrations
             modelBuilder.Entity("QuizGame.Server.Data.GameSessionEntity", b =>
                 {
                     b.Navigation("Players");
+
+                    b.Navigation("Rounds");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
+                {
+                    b.Navigation("Answers");
                 });
 
             modelBuilder.Entity("QuizGame.Server.Data.QuestionEntity", b =>
