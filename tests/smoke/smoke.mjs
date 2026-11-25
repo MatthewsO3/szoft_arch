@@ -48,9 +48,13 @@ function connectHub(token) {
     const past = events.find(match);
     if (past) return Promise.resolve(past);
     return new Promise((resolve, reject) => {
-      const w = { match, resolve };
+      const timer = setTimeout(() => {
+        const i = waiters.indexOf(w);
+        if (i >= 0) waiters.splice(i, 1);
+        reject(new Error(`timeout waiting for ${name}`));
+      }, ms);
+      const w = { match, resolve: (evt) => { clearTimeout(timer); resolve(evt); } };
       waiters.push(w);
-      setTimeout(() => { waiters.splice(waiters.indexOf(w), 1); reject(new Error(`timeout waiting for ${name}`)); }, ms);
     });
   };
   return { conn, events, waitFor };

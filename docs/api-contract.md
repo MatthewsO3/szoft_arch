@@ -127,11 +127,16 @@ Initial set; extend as needed and keep in sync with the client:
 | `NotInLobby` | Join attempted after the game started (REST 409) |
 | `InvalidSettings` | `RoomSettings` value out of range (REST 400) |
 | `NotAttached` | Hub method needs `HostAttach` / a joined room first |
+| `QuestionNotFound` | No active question with the given id (REST 404; `SendQuestion` over the hub) |
+| `RoundInProgress` | `SendQuestion` while another round is open |
+| `NoActiveRound` | `CloseRound` / `SubmitAnswer` with no open round, or for a round that is not the open one |
+| `InvalidRound` | Kind does not fit the question type (Grab = multiple choice, BaseOrder/Battle = estimation), malformed question, or an invalid battle (no attacker/target, target has no owner, own territory) |
+| `InvalidAnswer` | Missing/unknown option (multiple choice) or missing number (estimation) |
+| `NotParticipant` | The player is not part of this round (battle: only attacker and defender) |
 | `CategoryNotFound` | No category with the given id (REST 404) |
 | `CategoryNameTaken` | A category with that name already exists (REST 409) |
 | `CategoryInUse` | Category still has questions; cannot be deleted (REST 409) |
 | `InvalidCategory` | Category name empty or longer than 64 chars (REST 400) |
-| `QuestionNotFound` | No active question with the given id (REST 404) |
 | `InvalidQuestion` | Question fails type-specific validation, plan §5.2 (REST 400) |
 
 ---
@@ -147,3 +152,33 @@ Initial set; extend as needed and keep in sync with the client:
 - `GamePhase` is serialized as a number (`0` Lobby … `3` Results); `wwwroot/js/hubNames.js` exports `GamePhase`.
 - `RoomExistsResponse.Phase` is `null` when the room does not exist.
 - Rate limits: `/auth/login` 10/min and `/rooms/{code}/join|exists` 120/min per client IP (`RateLimits:*`); excess → `429`.
+
+---
+
+## 5. Question rounds
+
+- **Opening:** `SendQuestion` works while no round is open. Kind ↔ type: `Grab` needs a multiple-choice question,
+  `BaseOrder` and `Battle` an estimation question. Phase gating (BaseOrder only in BaseSelection, Grab/Battle only in
+  Conquest) arrives with the phase machine; until then a round may open in any phase.
+- **Who receives what:** host group → `QuestionStarted` with the full `QuestionDto` (correct answer included) plus
+  `AnswerCountChanged(0, n)`; players → `QuestionStarted` with `QuestionForPlayer` (options only, no text, no correct
+  answer, `ServerDeadlineUtc`). Battle: only attacker and defender get the question, everybody else `BattleAnnounced`.
+- **Round id:** `QuestionForPlayer.RoundId` is the id players answer with. The host does not need it (`CloseRound` has no
+  argument); it is in `RoomState.CurrentRound` and in `RoundClosedDto.RoundId`.
+- **Deadline:** `ServerDeadlineUtc = start + question.TimeLimitSeconds` (room default if 0). Answers are accepted up to
+  deadline + 300 ms (`Rounds:GraceMilliseconds`), later ones get `AnswerTooLate`. Receive time is stamped by the server.
+- **Answering:** the first answer is final (`AlreadyAnswered`). Multiple choice sends `Option` (`'A'`–`'D'`, case-insensitive),
+  estimation sends `Number`.
+- **Closing:** the round closes at deadline + grace, when every *connected* participant has answered, or when the host calls
+  `CloseRound` (offline or removed players do not hold it open). Exactly one `RoundClosed` is sent to the whole room.
+- **Ranking (`RoundClosedDto.Ranking`, ranks 1..n):**
+  - Multiple choice: correct answers by receive time, then wrong answers, then non-answerers (join order).
+    `WinnerPlayerIds` = first `WinnersPerRound` correct players (empty if nobody was correct).
+  - Estimation: smallest `Distance` first, ties by earlier receive time, non-answerers last (join order).
+    `BaseOrder` → `WinnerPlayerIds` lists everybody in ranking order (the pick order). `IsCorrect` = exact hit.
+  - Battle: same distance ranking, but a tie goes to the defender; `WinnerPlayerIds` has one entry.
+    The defender is the owner of the target territory (needs the map, M3).
+- **Reconnect:** a player or host that (re)attaches while a round is open gets `QuestionStarted` again (same deadline).
+- **Persistence:** on close the `Rounds` row and its `Answers` rows are written in one transaction (players without an
+  answer have no `Answers` row). History write failures are logged and never affect the game.
+

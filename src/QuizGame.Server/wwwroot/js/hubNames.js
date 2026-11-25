@@ -49,7 +49,21 @@ export const ErrorCodes = Object.freeze({
   InvalidSettings: 'InvalidSettings',
   NotAuthorized: 'NotAuthorized',
   NotAttached: 'NotAttached',
+  InvalidPhase: 'InvalidPhase',
+  NotEnoughPlayers: 'NotEnoughPlayers',
+  AnswerTooLate: 'AnswerTooLate',
+  AlreadyAnswered: 'AlreadyAnswered',
+  QuestionNotFound: 'QuestionNotFound',
+  RoundInProgress: 'RoundInProgress',
+  NoActiveRound: 'NoActiveRound',
+  InvalidRound: 'InvalidRound',
+  InvalidAnswer: 'InvalidAnswer',
+  NotParticipant: 'NotParticipant',
 });
+
+// RoundKind / QuestionType are serialized as numbers (QuizGame.Contracts.RoundKind / QuestionType).
+export const RoundKind = Object.freeze({ BaseOrder: 0, Grab: 1, Battle: 2 });
+export const QuestionType = Object.freeze({ MultipleChoice: 0, Estimation: 1 });
 
 // GamePhase is serialized as its numeric value (QuizGame.Contracts.GamePhase).
 export const GamePhase = Object.freeze({
