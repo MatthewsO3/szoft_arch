@@ -25,6 +25,7 @@ public static class HubNames
         public const string PickTerritory = "PickTerritory";
         public const string NominateTarget = "NominateTarget";
         public const string Rejoin = "Rejoin";
+        public const string LeaveRoom = "LeaveRoom";
         public const string Ping = "Ping";
     }
 
@@ -45,6 +46,8 @@ public static class HubNames
         public const string PickWaiting = "PickWaiting";
         public const string ScoreboardUpdated = "ScoreboardUpdated";
         public const string GameFinished = "GameFinished";
+        public const string Kicked = "Kicked";
+        public const string RoomClosed = "RoomClosed";
         public const string Error = "Error";
     }
 }

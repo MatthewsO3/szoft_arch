@@ -1,14 +1,49 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Quiz Game</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161f">
+  <title>Strategic Quiz</title>
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-    <main>
-        <h1>Quiz Game</h1>
-        <p>Player web app placeholder. The join screen lands here (M1).</p>
-    </main>
+  <header id="header" class="header" hidden>
+    <span id="me-chip" class="chip"></span>
+    <span id="me-name" class="me-name"></span>
+    <span id="conn" class="conn" data-state="offline" title="Connection"></span>
+  </header>
+
+  <main>
+    <!-- Join -->
+    <section id="screen-join" class="screen" hidden>
+      <h1>Strategic Quiz</h1>
+      <form id="join-form" autocomplete="off" novalidate>
+        <label for="code">Room code</label>
+        <input id="code" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" required>
+
+        <label for="name">Your name</label>
+        <input id="name" name="name" maxlength="20" placeholder="Nickname" required>
+
+        <p id="join-error" class="error" role="alert" hidden></p>
+        <button id="join-btn" type="submit">Join</button>
+      </form>
+    </section>
+
+    <!-- Lobby / waiting -->
+    <section id="screen-lobby" class="screen" hidden>
+      <h1>You're in!</h1>
+      <p class="muted">Waiting for the host to start the game…</p>
+      <p><strong>Room <span id="lobby-code"></span></strong> · <span id="lobby-count">0</span> players</p>
+      <ul id="player-list" class="players"></ul>
+      <p id="lobby-offline" class="error" hidden>
+        Connection lost. <button id="reconnect-btn" type="button">Reconnect</button>
+      </p>
+      <button id="leave-btn" type="button" class="secondary">Leave room</button>
+    </section>
+  </main>
+
+  <script src="js/lib/signalr.min.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

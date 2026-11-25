@@ -61,3 +61,6 @@ Thumbs.db
 # docker-compose.yml and Dockerfiles ARE committed. Local volume data
 # (if ever bind-mounted) goes here:
 /pgdata/
+
+# local-only compose tweaks
+docker-compose.override.yml
