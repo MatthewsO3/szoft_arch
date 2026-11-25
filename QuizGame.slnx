@@ -6,5 +6,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/QuizGame.Domain.Tests/QuizGame.Domain.Tests.csproj" />
+    <Project Path="tests/QuizGame.Host.Tests/QuizGame.Host.Tests.csproj" />
   </Folder>
 </Solution>
