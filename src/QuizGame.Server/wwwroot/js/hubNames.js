@@ -39,6 +39,10 @@ export const Events = Object.freeze({
 });
 
 export const ErrorCodes = Object.freeze({
+  AnswerTooLate: 'AnswerTooLate',
+  AlreadyAnswered: 'AlreadyAnswered',
+  InvalidAnswer: 'InvalidAnswer',
+  InvalidPhase: 'InvalidPhase',
   InvalidCredentials: 'InvalidCredentials',
   RoomNotFound: 'RoomNotFound',
   PlayerNotFound: 'PlayerNotFound',
@@ -58,3 +62,5 @@ export const GamePhase = Object.freeze({
   Conquest: 2,
   Results: 3,
 });
+
+export const QuestionType = Object.freeze({ MultipleChoice: 0, Estimation: 1 });

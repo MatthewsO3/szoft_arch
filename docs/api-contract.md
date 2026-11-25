@@ -65,7 +65,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `SendQuestion` | GM | `SendQuestionRequest` | Opens a round |
 | `CloseRound` | GM | – | Ends the current round early |
 | `ConfirmBattle` | GM | – | Confirms an attacker's nomination (D3) |
-| `SubmitAnswer` | Player | `SubmitAnswerRequest` | Records an answer (first is final, D7) |
+| `SubmitAnswer` | Player | `SubmitAnswerRequest` | Returns `AnswerAccepted { roundId }` after recording an answer (first is final, D7) |
 | `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker |
 | `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target (D3) |
 | `Rejoin` | Player/GM | – | Re-attach after disconnect; server replies with `RoomState` |
@@ -82,7 +82,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `PlayerConnectionChanged` | room | `PlayerSummary` |
 | `PhaseChanged` | room | `GamePhase` |
 | `MapUpdated` | room | `MapUpdate` (changed cells + scoreboard) |
-| `QuestionStarted` | gm group | `QuestionDto` (includes correct answer) |
+| `QuestionStarted` | gm group | `QuestionForHost { roundId, question: QuestionDto, serverDeadlineUtc }` (includes correct answer) |
 | `QuestionStarted` | players group | `QuestionForPlayer` (no correct answer); battle → only the two players |
 | `BattleAnnounced` | non-participants | `BattleAnnouncement` |
 | `AnswerCountChanged` | gm group | `AnswerCount` |
@@ -113,6 +113,7 @@ Initial set; extend as needed and keep in sync with the client:
 | `InvalidTransition` | Illegal phase change |
 | `AnswerTooLate` | Received after deadline + grace |
 | `AlreadyAnswered` | Second answer rejected (first is final) |
+| `InvalidAnswer` | Answer does not match the question type/options or numeric constraints |
 | `NotYourPick` | PickTerritory from someone who isn't the picker |
 | `InvalidPick` | Territory not free / not adjacent / not valid |
 | `NotEnoughPlayers` | StartGame below `MinPlayers` |
@@ -137,3 +138,33 @@ Initial set; extend as needed and keep in sync with the client:
 - `GamePhase` is serialized as a number (`0` Lobby … `3` Results); `wwwroot/js/hubNames.js` exports `GamePhase`.
 - `RoomExistsResponse.Phase` is `null` when the room does not exist.
 - Rate limits: `/auth/login` 10/min and `/rooms/{code}/join|exists` 120/min per client IP (`RateLimits:*`); excess → `429`.
+
+## 5. M2 round integration (client contract; backend round implementation pending)
+
+The phone question UI and WPF question projector consume these contracts. The current
+server only implements room/presence methods and `Ping`; the round methods/events below
+must be implemented by M2 part A before the complete question flow can run.
+
+- Send `QuestionForHost` only to the game master; send `QuestionForPlayer` only to eligible
+  players. The projector must not reveal `QuestionDto`'s correct answer before `RoundClosed`.
+- `SubmitAnswer` returns `AnswerAccepted` with the submitted round ID only after the
+  answer has been recorded. Validation failures throw `HubException` containing the stable
+  code (`InvalidAnswer`, `AlreadyAnswered`, `AnswerTooLate`, or `InvalidPhase`). Do not
+  report a rejected submission solely via an uncorrelated `Error` event and return success.
+- On connect and `Rejoin`, build a **caller-specific** `RoomStateDto` under the same
+  synchronization used for submissions. For an eligible player, include `PlayerQuestion`
+  and authoritative `HasAnswered`. For a host, include `HostQuestion`. Never include
+  `HostQuestion` in a player snapshot or broadcast it to the whole room. A non-participant
+  receives neither question payload. Existing room snapshots leave these fields null.
+- An active question payload is present only while the round is open. Include
+  `LastRoundResult` for recovery after a missed `RoundClosed`; the active question takes
+  precedence if a newer round has started. Do not include accepted answers in public
+  snapshots before round closure; `HasAnswered` describes only the caller.
+- The server serializes snapshot/event delivery so an older snapshot cannot replace a
+  newer round event. Event round IDs must match the corresponding question and results.
+- Clients calculate remaining time from the server deadline. `Ping` returns UTC and
+  clients use half the round-trip time to estimate transit latency. Local expiry locks
+  inputs but does not evaluate or reveal answers; only `RoundClosed` reveals the result.
+- An unknown submission/transport failure locks input until `Rejoin` or reconnect supplies
+  authoritative state. A successful invocation with a missing acknowledgment is also
+  treated as uncertain, never as acceptance.

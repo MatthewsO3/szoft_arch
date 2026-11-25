@@ -6,6 +6,10 @@ namespace QuizGame.Contracts;
 /// </summary>
 public static class ErrorCodes
 {
+    public const string AnswerTooLate = "AnswerTooLate";
+    public const string AlreadyAnswered = "AlreadyAnswered";
+    public const string InvalidAnswer = "InvalidAnswer";
+    public const string InvalidPhase = "InvalidPhase";
     public const string InvalidCredentials = "InvalidCredentials";
     public const string RoomNotFound = "RoomNotFound";
     public const string PlayerNotFound = "PlayerNotFound";

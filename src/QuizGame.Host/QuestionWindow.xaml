@@ -1,0 +1,40 @@
+<Window x:Class="QuizGame.Host.QuestionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Strategic Quiz — Question" Width="1100" Height="760" MinWidth="480" MinHeight="360"
+        Background="#14161F" Foreground="#F2F4F8" KeyDown="OnKeyDown">
+    <DockPanel Margin="24">
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <TextBlock Text="F11: fullscreen · Esc: exit fullscreen" Foreground="#9AA3B5" />
+            <TextBlock Text="{Binding ConnectionStatus}" HorizontalAlignment="Right" Foreground="#9AA3B5" />
+        </DockPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Viewbox Stretch="Uniform" StretchDirection="Both">
+                <StackPanel Width="1000" Margin="12">
+                    <TextBlock Text="{Binding Text}" FontSize="40" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Countdown}" FontSize="40" Foreground="#FFCA6A" Margin="0,20" />
+                    <ProgressBar Value="{Binding TimeRemainingFraction}" Maximum="1" Height="12" Margin="0,0,0,16"
+                                 Foreground="#FFCA6A" AutomationProperties.Name="Time remaining" />
+                    <TextBlock Text="{Binding Prompt}" FontSize="26" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Options}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#25334F" CornerRadius="12" Padding="18" Margin="0,0,0,12">
+                                    <TextBlock Text="{Binding}" FontSize="28" TextWrapping="Wrap" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding CorrectAnswer}" FontSize="32" Foreground="#3DDC84" TextWrapping="Wrap" Margin="0,12" />
+                    <ItemsControl ItemsSource="{Binding Ranking}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="24" TextWrapping="Wrap" Margin="0,4" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Viewbox>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

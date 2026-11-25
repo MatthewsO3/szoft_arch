@@ -54,8 +54,13 @@ public sealed class MainViewModel : ViewModelBase
         _connection.PlayerLeft += p => OnUi(() => Remove(p.Id));
         _connection.RoomClosed += () => OnUi(ClearRoom);
         _connection.ErrorReceived += e => OnUi(() => ErrorMessage = e.Message);
-        _connection.StatusChanged += s => OnUi(() => ConnectionStatus = s);
+        _connection.StatusChanged += s => OnUi(() => { ConnectionStatus = s; Question.ConnectionStatus = s; });
+        _connection.QuestionStarted += q => OnUi(() => Question.Start(q));
+        _connection.RoundClosed += r => OnUi(() => Question.Close(r));
+        _connection.ClockSynchronized += (utc, latency) => OnUi(() => Question.SyncClock(utc, latency));
     }
+
+    public QuestionViewModel Question { get; } = new();
 
     public ObservableCollection<PlayerItem> Players { get; } = [];
 
@@ -170,6 +175,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private void ClearRoom()
     {
+        Question.Reset();
         RoomCode = "";
         JoinUrl = "";
         Players.Clear();
@@ -178,6 +184,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private void ApplyState(RoomStateDto state)
     {
+        Question.ApplyState(state);
         Players.Clear();
         foreach (var p in state.Players) Players.Add(new PlayerItem(p));
         Raise(nameof(PlayerCountText));
@@ -198,5 +205,9 @@ public sealed class MainViewModel : ViewModelBase
         Raise(nameof(PlayerCountText));
     }
 
-    public Task ShutdownAsync() => _connection.StopAsync();
+    public Task ShutdownAsync()
+    {
+        Question.Dispose();
+        return _connection.StopAsync();
+    }
 }
