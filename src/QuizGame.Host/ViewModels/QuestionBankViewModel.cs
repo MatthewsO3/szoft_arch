@@ -80,8 +80,14 @@ public sealed class QuestionBankViewModel : ViewModelBase
         get => _selectedCategoryFilter;
         set
         {
-            var next = value ?? AllCategoriesChoice;
-            if (!Set(ref _selectedCategoryFilter, next) || _suppressAutoReload) return;
+            if (value is null)
+            {
+                _selectedCategoryFilter = AllCategoriesChoice;
+                Raise(nameof(SelectedCategoryFilter));
+                return;
+            }
+
+            if (!Set(ref _selectedCategoryFilter, value) || _suppressAutoReload) return;
             Page = 1;
             CurrentLoadTask = ReloadQuestionsAsync();
         }
@@ -92,8 +98,14 @@ public sealed class QuestionBankViewModel : ViewModelBase
         get => _selectedTypeFilter;
         set
         {
-            var next = value ?? TypeFilters[0];
-            if (!Set(ref _selectedTypeFilter, next) || _suppressAutoReload) return;
+            if (value is null)
+            {
+                _selectedTypeFilter = TypeFilters[0];
+                Raise(nameof(SelectedTypeFilter));
+                return;
+            }
+
+            if (!Set(ref _selectedTypeFilter, value) || _suppressAutoReload) return;
             Page = 1;
             CurrentLoadTask = ReloadQuestionsAsync();
         }
@@ -104,8 +116,14 @@ public sealed class QuestionBankViewModel : ViewModelBase
         get => _selectedDifficultyFilter;
         set
         {
-            var next = value ?? DifficultyFilters[0];
-            if (!Set(ref _selectedDifficultyFilter, next) || _suppressAutoReload) return;
+            if (value is null)
+            {
+                _selectedDifficultyFilter = DifficultyFilters[0];
+                Raise(nameof(SelectedDifficultyFilter));
+                return;
+            }
+
+            if (!Set(ref _selectedDifficultyFilter, value) || _suppressAutoReload) return;
             Page = 1;
             CurrentLoadTask = ReloadQuestionsAsync();
         }
@@ -236,9 +254,9 @@ public sealed class QuestionBankViewModel : ViewModelBase
         _suppressAutoReload = true;
         try
         {
-            CategoryFilters.Clear();
-            CategoryFilters.Add(AllCategoriesChoice);
-            SelectedCategoryFilter = AllCategoriesChoice;
+            ResetCategoryFilterItems();
+            _selectedCategoryFilter = AllCategoriesChoice;
+            Raise(nameof(SelectedCategoryFilter));
             SelectedTypeFilter = TypeFilters[0];
             SelectedDifficultyFilter = DifficultyFilters[0];
             SearchText = "";
@@ -482,8 +500,7 @@ public sealed class QuestionBankViewModel : ViewModelBase
         _suppressAutoReload = true;
         try
         {
-            CategoryFilters.Clear();
-            CategoryFilters.Add(AllCategoriesChoice);
+            ResetCategoryFilterItems();
             foreach (var c in categories)
                 CategoryFilters.Add(new FilterChoice<int?>(c.Name, c.Id));
 
@@ -493,18 +510,31 @@ public sealed class QuestionBankViewModel : ViewModelBase
 
             if (restored is null)
             {
-                SelectedCategoryFilter = AllCategoriesChoice;
+                _selectedCategoryFilter = AllCategoriesChoice;
                 Page = 1;
             }
             else
             {
-                SelectedCategoryFilter = restored;
+                _selectedCategoryFilter = restored;
             }
+
+            Raise(nameof(SelectedCategoryFilter));
         }
         finally
         {
             _suppressAutoReload = false;
         }
+    }
+
+    private void ResetCategoryFilterItems()
+    {
+        if (CategoryFilters.Count == 0)
+            CategoryFilters.Add(AllCategoriesChoice);
+        else if (!ReferenceEquals(CategoryFilters[0], AllCategoriesChoice))
+            CategoryFilters[0] = AllCategoriesChoice;
+
+        while (CategoryFilters.Count > 1)
+            CategoryFilters.RemoveAt(CategoryFilters.Count - 1);
     }
 
     private void CancelPendingLoad()
