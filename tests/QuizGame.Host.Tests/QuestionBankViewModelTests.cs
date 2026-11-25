@@ -255,4 +255,39 @@ public class QuestionBankViewModelTests
         Assert.Equal(1, vm.Page);
         Assert.Equal(0, vm.TotalCount);
     }
+
+    [Fact]
+    public async Task EmptyCategoriesAndNullFilterCoercion_KeepAllCategoriesSelectedAndNotify()
+    {
+        var api = new FakeQuestionBankApi
+        {
+            GetCategoriesHandler = () => [],
+            GetQuestionsHandler = q => new PagedResult<QuestionDto>([], q.Page, q.PageSize, 0)
+        };
+        var vm = new QuestionBankViewModel(new FakeQuestionBankDialogService());
+        var changedCount = 0;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(QuestionBankViewModel.SelectedCategoryFilter))
+                changedCount++;
+        };
+
+        vm.AttachApi(api);
+        await vm.EnsureLoadedAsync();
+
+        Assert.Single(vm.CategoryFilters);
+        Assert.Equal("All categories", vm.CategoryFilters[0].Label);
+        Assert.Equal("All categories", vm.SelectedCategoryFilter.Label);
+        Assert.Null(vm.SelectedCategoryFilter.Value);
+        Assert.True(changedCount >= 1);
+
+        var queriesBeforeNull = api.Queries.Count;
+        var countBeforeNull = changedCount;
+
+        vm.SelectedCategoryFilter = null!;
+
+        Assert.Equal("All categories", vm.SelectedCategoryFilter.Label);
+        Assert.Equal(countBeforeNull + 1, changedCount);
+        Assert.Equal(queriesBeforeNull, api.Queries.Count);
+    }
 }
