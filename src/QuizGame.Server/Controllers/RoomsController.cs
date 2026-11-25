@@ -20,6 +20,7 @@ public sealed class RoomsController(
     IHubContext<GameHub> hub,
     TimeProvider time,
     ISessionRecorder recorder,
+    RoundCoordinator roundCoordinator,
     IConfiguration config) : ControllerBase
 {
     /// <summary>Game master creates a room (optional settings body) and gets its 6-digit code.</summary>
@@ -61,6 +62,7 @@ public sealed class RoomsController(
         if (!TryGetOwnedRoom(code, out var room, out var error)) return error!;
 
         rooms.Remove(room.Code);
+        roundCoordinator.Cancel(room.Code);
         await recorder.SessionEndedAsync(room.SessionId);
         await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.RoomClosed);
         return NoContent();

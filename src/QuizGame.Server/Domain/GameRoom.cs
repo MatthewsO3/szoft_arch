@@ -21,7 +21,7 @@ public readonly record struct JoinResult(PlayerSummary? Player, JoinError Error)
 /// Live state of one room. Pure game logic: no ASP.NET, SignalR or EF dependencies (plan §3).
 /// All members are thread-safe (single lock per room).
 /// </summary>
-public sealed class GameRoom
+public sealed partial class GameRoom
 {
     public const int MaxNameLength = 20;
 
@@ -150,6 +150,7 @@ public sealed class GameRoom
                 Phase = _phase,
                 Settings = Settings,
                 Players = _players.Select(p => p.ToSummary()).ToList(),
+                CurrentRound = _round?.ToCurrentDto(),
                 ServerUtcNow = now,
             };
         }

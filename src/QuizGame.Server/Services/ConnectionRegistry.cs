@@ -26,6 +26,16 @@ public sealed class ConnectionRegistry
         lock (_gate) return _byConnection.Values.Any(c => c.RoomCode == roomCode);
     }
 
+    /// <summary>Connection ids of the given players in a room (a player may have two during a reconnect).</summary>
+    public IReadOnlyList<string> GetPlayerConnections(string roomCode, IReadOnlyCollection<Guid> playerIds)
+    {
+        lock (_gate)
+            return _byConnection.Values
+                .Where(c => c.RoomCode == roomCode && c.PlayerId is { } id && playerIds.Contains(id))
+                .Select(c => c.ConnectionId)
+                .ToList();
+    }
+
     /// <summary>Registers a connection. Returns the player DTO if their presence flipped to connected.</summary>
     public PlayerSummary? Connect(GameRoom room, ConnectionEntry info)
     {

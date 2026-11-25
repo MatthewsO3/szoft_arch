@@ -107,6 +107,38 @@ public sealed class EfSessionRecorder(
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, now), ct);
         }, ct);
 
+    public Task RoundClosedAsync(Guid sessionId, RoundRecord round, CancellationToken ct = default) =>
+        Run("round close", async db =>
+        {
+            db.Rounds.Add(new RoundEntity
+            {
+                Id = round.RoundId,
+                SessionId = sessionId,
+                Seq = round.Seq,
+                Kind = round.Kind.ToString(),
+                QuestionId = round.QuestionId,
+                StartedAt = round.StartedAt,
+                Deadline = round.Deadline,
+                ClosedAt = round.ClosedAt,
+                AttackerId = round.AttackerId,
+                DefenderId = round.DefenderId,
+                TargetTerritoryIndex = round.TargetTerritoryIndex,
+                WinnerPlayerId = round.WinnerPlayerId,
+                Answers = round.Answers.Select(a => new AnswerEntity
+                {
+                    Id = Guid.NewGuid(),
+                    PlayerId = a.PlayerId,
+                    ChosenOption = a.Option?.ToString(),
+                    NumericValue = a.Number,
+                    ReceivedAt = a.ReceivedAt,
+                    IsCorrect = a.IsCorrect,
+                    Distance = a.Distance,
+                    Rank = a.Rank,
+                }).ToList(),
+            });
+            await db.SaveChangesAsync(ct); // Round + Answers: one SaveChanges = one transaction
+        }, ct);
+
     private async Task Run(string what, Func<QuizDbContext, Task> action, CancellationToken ct)
     {
         try

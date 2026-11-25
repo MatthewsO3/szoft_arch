@@ -7,6 +7,8 @@ public sealed class QuizDbContext(DbContextOptions<QuizDbContext> options) : DbC
     public DbSet<GameMasterEntity> GameMasters => Set<GameMasterEntity>();
     public DbSet<GameSessionEntity> GameSessions => Set<GameSessionEntity>();
     public DbSet<PlayerEntity> Players => Set<PlayerEntity>();
+    public DbSet<RoundEntity> Rounds => Set<RoundEntity>();
+    public DbSet<AnswerEntity> Answers => Set<AnswerEntity>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -37,6 +39,24 @@ public sealed class QuizDbContext(DbContextOptions<QuizDbContext> options) : DbC
             e.Property(x => x.ColorHex).IsRequired().HasMaxLength(9);
             e.HasOne(x => x.Session).WithMany(x => x.Players).HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.SessionId);
+        });
+
+        b.Entity<RoundEntity>(e =>
+        {
+            e.ToTable("Rounds");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Kind).IsRequired().HasMaxLength(16);
+            e.HasOne(x => x.Session).WithMany(x => x.Rounds).HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.SessionId, x.Seq }).IsUnique();
+        });
+
+        b.Entity<AnswerEntity>(e =>
+        {
+            e.ToTable("Answers");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ChosenOption).HasMaxLength(1);
+            e.HasOne(x => x.Round).WithMany(x => x.Answers).HasForeignKey(x => x.RoundId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.RoundId, x.PlayerId }).IsUnique();
         });
     }
 }

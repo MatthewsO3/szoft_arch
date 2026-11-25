@@ -41,6 +41,7 @@ public sealed class NullSessionRecorder : ISessionRecorder
     public Task PlayerJoinedAsync(Guid sessionId, PlayerSummary player, CancellationToken ct = default) => Task.CompletedTask;
     public Task PlayerLeftAsync(Guid sessionId, Guid playerId, CancellationToken ct = default) => Task.CompletedTask;
     public Task SessionEndedAsync(Guid sessionId, CancellationToken ct = default) => Task.CompletedTask;
+    public Task RoundClosedAsync(Guid sessionId, RoundRecord round, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 public sealed class InMemoryPersistenceInitializer(
