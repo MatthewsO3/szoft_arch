@@ -3,6 +3,12 @@ namespace QuizGame.Contracts;
 /// <summary>A question-bank category (plan §5.1 Categories).</summary>
 public sealed record CategoryDto(int Id, string Name);
 
+/// <summary>Create/update payload for a category (plan §6.2 POST/PUT /categories).</summary>
+public sealed record CategoryUpsertRequest
+{
+    public string Name { get; init; } = "";
+}
+
 /// <summary>One multiple-choice option (plan §5.1 QuestionOptions).</summary>
 public sealed record OptionDto(Guid Id, char Label, string Text);
 

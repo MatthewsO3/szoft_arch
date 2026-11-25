@@ -14,6 +14,7 @@ public static class EfPersistenceExtensions
         services.AddDbContextFactory<QuizDbContext>(o => o.UseNpgsql(connectionString));
         services.AddSingleton<IGameMasterStore, EfGameMasterStore>();
         services.AddSingleton<ISessionRecorder, EfSessionRecorder>();
+        services.AddSingleton<IQuestionBank, EfQuestionBank>();
         services.AddSingleton<IPersistenceInitializer, EfPersistenceInitializer>();
         return services;
     }
@@ -149,6 +150,9 @@ public sealed class EfPersistenceInitializer(
             var closed = await db.GameSessions.Where(s => s.EndedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.EndedAt, now), ct);
             if (closed > 0) logger.LogInformation("Closed {Count} session(s) left open by a previous run", closed);
+
+            var seededQuestions = await QuestionSeeder.EnsureAsync(db, ct);
+            if (seededQuestions > 0) logger.LogInformation("Seeded {Count} question(s) into the question bank", seededQuestions);
         }
 
         if (await AdminSeeder.EnsureAsync(store, hasher, seed.Value, ct))

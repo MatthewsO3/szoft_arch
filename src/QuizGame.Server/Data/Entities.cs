@@ -32,3 +32,53 @@ public sealed class PlayerEntity
     public DateTimeOffset JoinedAt { get; set; }
     public DateTimeOffset? LeftAt { get; set; }
 }
+
+/// <summary>Plan §5.1 Categories: a small lookup table with an int key and a unique name.</summary>
+public sealed class CategoryEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public List<QuestionEntity> Questions { get; set; } = [];
+}
+
+/// <summary>
+/// Plan §5.1 Questions. A multiple-choice question carries 2–4 <see cref="Options"/> with exactly one correct;
+/// an estimation question carries <see cref="CorrectNumber"/> and no options (validated in the service layer and
+/// by a DB check constraint, plan §5.2). Deleting is a soft delete (<see cref="IsActive"/> = false) so past
+/// rounds keep their reference.
+/// </summary>
+public sealed class QuestionEntity
+{
+    public Guid Id { get; set; }
+    public int CategoryId { get; set; }
+    public CategoryEntity? Category { get; set; }
+    public QuizGame.Contracts.QuestionType Type { get; set; }
+    public string Text { get; set; } = "";
+    public int Difficulty { get; set; }
+    public int TimeLimitSeconds { get; set; }
+
+    /// <summary>Estimation only: the correct numeric value. Null for multiple choice.</summary>
+    public decimal? CorrectNumber { get; set; }
+
+    /// <summary>Optional unit shown with an estimation answer, e.g. "km".</summary>
+    public string? Unit { get; set; }
+
+    /// <summary>Owning game master, or null for a question shared by everyone (plan §5.1).</summary>
+    public Guid? OwnerId { get; set; }
+
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public List<QuestionOptionEntity> Options { get; set; } = [];
+}
+
+/// <summary>Plan §5.1 QuestionOptions: one A–D choice of a multiple-choice question.</summary>
+public sealed class QuestionOptionEntity
+{
+    public Guid Id { get; set; }
+    public Guid QuestionId { get; set; }
+    public QuestionEntity? Question { get; set; }
+    public char Label { get; set; }
+    public string Text { get; set; } = "";
+    public bool IsCorrect { get; set; }
+}
