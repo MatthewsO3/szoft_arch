@@ -22,6 +22,27 @@ namespace QuizGame.Server.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("QuizGame.Server.Data.CategoryEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Categories", (string)null);
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.GameMasterEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -115,6 +136,90 @@ namespace QuizGame.Server.Migrations
                     b.ToTable("Players", (string)null);
                 });
 
+            modelBuilder.Entity("QuizGame.Server.Data.QuestionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("CorrectNumber")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Difficulty")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("TimeLimitSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("Questions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Questions_CorrectNumber_ByType", "(\"Type\" = 'Estimation' AND \"CorrectNumber\" IS NOT NULL) OR (\"Type\" = 'MultipleChoice' AND \"CorrectNumber\" IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.QuestionOptionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(1)
+                        .HasColumnType("character varying(1)");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionId");
+
+                    b.ToTable("QuestionOptions", (string)null);
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.GameSessionEntity", b =>
                 {
                     b.HasOne("QuizGame.Server.Data.GameMasterEntity", "GameMaster")
@@ -137,9 +242,46 @@ namespace QuizGame.Server.Migrations
                     b.Navigation("Session");
                 });
 
+            modelBuilder.Entity("QuizGame.Server.Data.QuestionEntity", b =>
+                {
+                    b.HasOne("QuizGame.Server.Data.CategoryEntity", "Category")
+                        .WithMany("Questions")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("QuizGame.Server.Data.GameMasterEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.QuestionOptionEntity", b =>
+                {
+                    b.HasOne("QuizGame.Server.Data.QuestionEntity", "Question")
+                        .WithMany("Options")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.CategoryEntity", b =>
+                {
+                    b.Navigation("Questions");
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.GameSessionEntity", b =>
                 {
                     b.Navigation("Players");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.QuestionEntity", b =>
+                {
+                    b.Navigation("Options");
                 });
 #pragma warning restore 612, 618
         }

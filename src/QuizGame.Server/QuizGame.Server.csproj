@@ -19,4 +19,8 @@
     <ProjectReference Include="..\QuizGame.Contracts\QuizGame.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Data\Seed\questions.json" />
+  </ItemGroup>
+
 </Project>
