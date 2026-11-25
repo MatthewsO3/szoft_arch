@@ -140,7 +140,7 @@ public sealed partial class GameRoom
         }
     }
 
-    public RoomStateDto Snapshot(DateTimeOffset now)
+    public RoomStateDto Snapshot(DateTimeOffset now, Guid? playerId = null, bool forHost = false)
     {
         lock (_gate)
         {
@@ -151,6 +151,11 @@ public sealed partial class GameRoom
                 Settings = Settings,
                 Players = _players.Select(p => p.ToSummary()).ToList(),
                 CurrentRound = _round?.ToCurrentDto(),
+                PlayerQuestion = playerId is { } id && _round?.Info.ParticipantIds.Contains(id) == true ? _round.Info.ForPlayer() : null,
+                HostQuestion = forHost && _round is { } r ? r.Info.ForHost() : null,
+                HasAnswered = playerId is { } player && _round?.HasAnswered(player) == true,
+                AnswerCount = forHost && _round is { } active ? new AnswerCount(active.AnswerCount, active.Participants.Count) : null,
+                LastRoundResult = _lastRoundResult,
                 ServerUtcNow = now,
             };
         }

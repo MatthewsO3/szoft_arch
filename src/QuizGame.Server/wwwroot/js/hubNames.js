@@ -39,6 +39,10 @@ export const Events = Object.freeze({
 });
 
 export const ErrorCodes = Object.freeze({
+  AnswerTooLate: 'AnswerTooLate',
+  AlreadyAnswered: 'AlreadyAnswered',
+  InvalidAnswer: 'InvalidAnswer',
+  InvalidPhase: 'InvalidPhase',
   InvalidCredentials: 'InvalidCredentials',
   RoomNotFound: 'RoomNotFound',
   PlayerNotFound: 'PlayerNotFound',
@@ -49,15 +53,11 @@ export const ErrorCodes = Object.freeze({
   InvalidSettings: 'InvalidSettings',
   NotAuthorized: 'NotAuthorized',
   NotAttached: 'NotAttached',
-  InvalidPhase: 'InvalidPhase',
   NotEnoughPlayers: 'NotEnoughPlayers',
-  AnswerTooLate: 'AnswerTooLate',
-  AlreadyAnswered: 'AlreadyAnswered',
   QuestionNotFound: 'QuestionNotFound',
   RoundInProgress: 'RoundInProgress',
   NoActiveRound: 'NoActiveRound',
   InvalidRound: 'InvalidRound',
-  InvalidAnswer: 'InvalidAnswer',
   NotParticipant: 'NotParticipant',
 });
 

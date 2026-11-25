@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using QuizGame.Contracts;
@@ -31,11 +32,24 @@ public sealed class RoundCoordinator(
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, (Guid RoundId, CancellationTokenSource Cts)> _timers = [];
+    private readonly ConditionalWeakTable<GameRoom, SemaphoreSlim> _commands = new();
+
+    // Serialize state changes AND their delivery so reconnect snapshots cannot overtake round events.
+    private async Task<T> SerializedAsync<T>(GameRoom room, Func<Task<T>> action)
+    {
+        var gate = _commands.GetValue(room, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try { return await action(); }
+        finally { gate.Release(); }
+    }
 
     private TimeSpan Grace => TimeSpan.FromMilliseconds(Math.Max(0, options.Value.GraceMilliseconds));
 
     /// <summary>Host opens a round. Returns the error code to report, or null on success.</summary>
-    public async Task<string?> StartAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct = default)
+    public Task<string?> StartAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct = default) =>
+        SerializedAsync(room, () => StartCoreAsync(room, request, ct));
+
+    private async Task<string?> StartCoreAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct)
     {
         var question = await questions.GetActiveAsync(request.QuestionId, ct);
         if (question is null) return ErrorCodes.QuestionNotFound;
@@ -63,7 +77,7 @@ public sealed class RoundCoordinator(
         var forPlayer = round.ForPlayer();
 
         // Host (and projector): full question including the correct answer.
-        await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.QuestionStarted, round.Question);
+        await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.QuestionStarted, round.ForHost());
         await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.AnswerCountChanged,
             new AnswerCount(0, round.ParticipantIds.Count));
 
@@ -83,7 +97,10 @@ public sealed class RoundCoordinator(
     }
 
     /// <summary>Records a player's answer. Returns the error code to report, or null on success.</summary>
-    public async Task<string?> SubmitAsync(GameRoom room, Guid playerId, SubmitAnswerRequest request, DateTimeOffset receivedAt)
+    public Task<string?> SubmitAsync(GameRoom room, Guid playerId, SubmitAnswerRequest request, DateTimeOffset receivedAt) =>
+        SerializedAsync(room, () => SubmitCoreAsync(room, playerId, request, receivedAt));
+
+    private async Task<string?> SubmitCoreAsync(GameRoom room, Guid playerId, SubmitAnswerRequest request, DateTimeOffset receivedAt)
     {
         var result = room.TrySubmitAnswer(playerId, request, receivedAt, Grace);
         if (!result.Ok)
@@ -103,12 +120,15 @@ public sealed class RoundCoordinator(
             HubNames.Events.AnswerCountChanged, new AnswerCount(result.Answered, result.Total));
 
         if (result.AllAnswered)
-            await CloseAsync(room, request.RoundId);
+            await CloseCoreAsync(room, request.RoundId);
         return null;
     }
 
     /// <summary>Closes the round (host, deadline timer or all answered). False if it was already closed.</summary>
-    public async Task<bool> CloseAsync(GameRoom room, Guid? roundId = null)
+    public Task<bool> CloseAsync(GameRoom room, Guid? roundId = null) =>
+        SerializedAsync(room, () => CloseCoreAsync(room, roundId));
+
+    private async Task<bool> CloseCoreAsync(GameRoom room, Guid? roundId)
     {
         var closed = room.CloseRound(roundId, time.GetUtcNow());
         if (closed is null) return false;
@@ -122,27 +142,14 @@ public sealed class RoundCoordinator(
     /// <summary>Stops the deadline timer of a room that is being closed or removed.</summary>
     public void Cancel(string roomCode) => CancelTimer(roomCode, null);
 
-    /// <summary>After a host or player reconnect: push the round in progress to that one connection (plan §7.5).</summary>
-    public async Task SendOpenRoundAsync(GameRoom room, IClientProxy caller, Guid? playerId)
-    {
-        if (room.GetOpenRound() is not { } open) return;
-        var round = open.Round;
-
-        if (playerId is null)
+    /// <summary>One caller-specific snapshot restores both open rounds and missed results.</summary>
+    public Task SendStateAsync(GameRoom room, IClientProxy caller, Guid? playerId) =>
+        SerializedAsync(room, async () =>
         {
-            await caller.SendAsync(HubNames.Events.QuestionStarted, round.Question);
-            await caller.SendAsync(HubNames.Events.AnswerCountChanged, new AnswerCount(open.Answered, open.Total));
-        }
-        else if (round.ParticipantIds.Contains(playerId.Value))
-        {
-            await caller.SendAsync(HubNames.Events.QuestionStarted, round.ForPlayer());
-        }
-        else if (round.Kind == RoundKind.Battle)
-        {
-            await caller.SendAsync(HubNames.Events.BattleAnnounced,
-                new BattleAnnouncement(round.AttackerId!.Value, round.DefenderId!.Value, round.TargetTerritoryIndex!.Value));
-        }
-    }
+            await caller.SendAsync(HubNames.Events.RoomState,
+                room.Snapshot(time.GetUtcNow(), playerId, forHost: playerId is null));
+            return true;
+        });
 
     private void ScheduleClose(GameRoom room, RoundInfo round)
     {

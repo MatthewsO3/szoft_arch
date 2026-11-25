@@ -42,6 +42,8 @@ public sealed class MainViewModel : ViewModelBase
     private string _copyRoomCodeText = "Copy";
     private bool _loggedIn;
     private int _selectedTabIndex;
+    private bool _roundOpen;
+    private string _answerProgress = "";
     private int _copyFeedbackVersion;
 
     public MainViewModel() : this(new WpfQuestionBankDialogService(), text => System.Windows.Clipboard.SetText(text))
@@ -58,6 +60,11 @@ public sealed class MainViewModel : ViewModelBase
         CreateRoomCommand = new AsyncRelayCommand(_ => CreateRoomAsync(), onError: ShowError);
         CloseRoomCommand = new AsyncRelayCommand(_ => CloseRoomAsync(), _ => HasRoom, ShowError);
         KickCommand = new AsyncRelayCommand(p => KickAsync((PlayerItem)p!), p => p is PlayerItem, ShowError);
+        SendQuestionCommand = new AsyncRelayCommand(_ => SendQuestionAsync(),
+            _ => HasRoom && _connection.IsConnected && !_roundOpen && QuestionBank.SelectedQuestion is not null, ShowError);
+        CloseRoundCommand = new AsyncRelayCommand(_ => _connection.CloseRoundAsync(),
+            _ => HasRoom && _connection.IsConnected && _roundOpen, ShowError);
+        QuestionBank.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(QuestionBank.SelectedQuestion)) RefreshRoundCommands(); };
         CopyRoomCodeCommand = new RelayCommand(_ => CopyRoomCode(), _ => HasRoom);
 
         _connection.RoomStateReceived += s => OnUi(() => ApplyState(s));
@@ -66,8 +73,14 @@ public sealed class MainViewModel : ViewModelBase
         _connection.PlayerLeft += p => OnUi(() => Remove(p.Id));
         _connection.RoomClosed += () => OnUi(ClearRoom);
         _connection.ErrorReceived += e => OnUi(() => ErrorMessage = e.Message);
-        _connection.StatusChanged += s => OnUi(() => ConnectionStatus = s);
+        _connection.StatusChanged += s => OnUi(() => { ConnectionStatus = s; Question.ConnectionStatus = s; RefreshRoundCommands(); });
+        _connection.QuestionStarted += q => OnUi(() => { Question.Start(q); _roundOpen = true; AnswerProgress = ""; RefreshRoundCommands(); });
+        _connection.RoundClosed += r => OnUi(() => { Question.Close(r); _roundOpen = false; RefreshRoundCommands(); });
+        _connection.AnswerCountChanged += c => OnUi(() => AnswerProgress = $"Answered {c.Answered}/{c.Total}");
+        _connection.ClockSynchronized += (utc, latency) => OnUi(() => Question.SyncClock(utc, latency));
     }
+
+    public QuestionViewModel Question { get; } = new();
 
     public ObservableCollection<PlayerItem> Players { get; } = [];
     public QuestionBankViewModel QuestionBank { get; }
@@ -77,6 +90,26 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand CreateRoomCommand { get; }
     public ICommand CloseRoomCommand { get; }
     public ICommand KickCommand { get; }
+    public ICommand SendQuestionCommand { get; }
+    public ICommand CloseRoundCommand { get; }
+    public string AnswerProgress { get => _answerProgress; private set => Set(ref _answerProgress, value); }
+
+    private void RefreshRoundCommands()
+    {
+        ((AsyncRelayCommand)SendQuestionCommand).RaiseCanExecuteChanged();
+        ((AsyncRelayCommand)CloseRoundCommand).RaiseCanExecuteChanged();
+    }
+
+    private Task SendQuestionAsync()
+    {
+        var selected = QuestionBank.SelectedQuestion ?? throw new InvalidOperationException("Select a question first.");
+        ErrorMessage = "";
+        return _connection.SendQuestionAsync(new SendQuestionRequest
+        {
+            QuestionId = selected.Id,
+            Kind = selected.Type == QuestionType.MultipleChoice ? RoundKind.Grab : RoundKind.BaseOrder,
+        });
+    }
     public ICommand CopyRoomCodeCommand { get; }
 
     public string ServerUrl { get => _serverUrl; set => Set(ref _serverUrl, value); }
@@ -97,6 +130,7 @@ public sealed class MainViewModel : ViewModelBase
             CopyRoomCodeText = "Copy";
             Raise(nameof(HasRoom));
             ((AsyncRelayCommand)CloseRoomCommand).RaiseCanExecuteChanged();
+            RefreshRoundCommands();
             ((RelayCommand)CopyRoomCodeCommand).RaiseCanExecuteChanged();
         }
     }
@@ -228,6 +262,9 @@ public sealed class MainViewModel : ViewModelBase
 
     private void ClearRoom()
     {
+        Question.Reset();
+        _roundOpen = false;
+        AnswerProgress = "";
         RoomCode = "";
         JoinUrl = "";
         Players.Clear();
@@ -236,6 +273,10 @@ public sealed class MainViewModel : ViewModelBase
 
     private void ApplyState(RoomStateDto state)
     {
+        Question.ApplyState(state);
+        _roundOpen = state.CurrentRound is not null;
+        AnswerProgress = state.AnswerCount is { } count ? $"Answered {count.Answered}/{count.Total}" : "";
+        RefreshRoundCommands();
         Players.Clear();
         foreach (var p in state.Players) Players.Add(new PlayerItem(p));
         Raise(nameof(PlayerCountText));
@@ -256,5 +297,9 @@ public sealed class MainViewModel : ViewModelBase
         Raise(nameof(PlayerCountText));
     }
 
-    public Task ShutdownAsync() => _connection.StopAsync();
+    public Task ShutdownAsync()
+    {
+        Question.Dispose();
+        return _connection.StopAsync();
+    }
 }

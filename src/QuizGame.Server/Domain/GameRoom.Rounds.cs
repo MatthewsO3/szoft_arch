@@ -33,6 +33,8 @@ public sealed record RoundInfo(
     Guid? DefenderId,
     int? TargetTerritoryIndex)
 {
+    public QuestionForHost ForHost() => new(RoundId, Question, Deadline);
+
     /// <summary>What a player's phone may see: never the correct answer, never the question text (D11).</summary>
     public QuestionForPlayer ForPlayer() => new()
     {
@@ -108,6 +110,7 @@ public sealed partial class GameRoom
 
     private ActiveRound? _round;
     private int _roundSeq;
+    private RoundClosedDto? _lastRoundResult;
 
     /// <summary>
     /// Seam for the map (M3): returns the owner of a territory, or null if it is free / unknown.
@@ -296,6 +299,7 @@ public sealed partial class GameRoom
                 outcome.Winners.Count > 0 ? outcome.Winners[0] : null, answers);
 
             _round = null;
+            _lastRoundResult = dto;
             _lastActivity = now;
             return new ClosedRound(dto, record);
         }

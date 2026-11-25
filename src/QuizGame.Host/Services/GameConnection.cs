@@ -18,6 +18,11 @@ public sealed class GameConnection : IAsyncDisposable
     public event Action? RoomClosed;
     public event Action<ErrorDto>? ErrorReceived;
     public event Action<string>? StatusChanged;
+    public event Action<QuestionForHost>? QuestionStarted;
+    public event Action<RoundClosedDto>? RoundClosed;
+    public event Action<AnswerCount>? AnswerCountChanged;
+    public bool IsConnected => _hub?.State == HubConnectionState.Connected;
+    public event Action<DateTimeOffset, TimeSpan>? ClockSynchronized;
 
     public async Task StartAsync(string baseUrl, string token, string roomCode)
     {
@@ -34,6 +39,9 @@ public sealed class GameConnection : IAsyncDisposable
         hub.On<PlayerSummary>(HubNames.Events.PlayerLeft, p => PlayerLeft?.Invoke(p));
         hub.On(HubNames.Events.RoomClosed, () => RoomClosed?.Invoke());
         hub.On<ErrorDto>(HubNames.Events.Error, e => ErrorReceived?.Invoke(e));
+        hub.On<QuestionForHost>(HubNames.Events.QuestionStarted, q => QuestionStarted?.Invoke(q));
+        hub.On<RoundClosedDto>(HubNames.Events.RoundClosed, r => RoundClosed?.Invoke(r));
+        hub.On<AnswerCount>(HubNames.Events.AnswerCountChanged, c => AnswerCountChanged?.Invoke(c));
 
         hub.Reconnecting += _ =>
         {
@@ -44,6 +52,7 @@ public sealed class GameConnection : IAsyncDisposable
         {
             await hub.InvokeAsync(HubNames.Methods.HostAttach, roomCode);
             StatusChanged?.Invoke("Connected");
+            await SynchronizeClockAsync(hub);
         };
         hub.Closed += _ =>
         {
@@ -55,10 +64,29 @@ public sealed class GameConnection : IAsyncDisposable
         await hub.StartAsync();
         await hub.InvokeAsync(HubNames.Methods.HostAttach, roomCode);
         StatusChanged?.Invoke("Connected");
+        await SynchronizeClockAsync(hub);
+    }
+
+    private async Task SynchronizeClockAsync(HubConnection hub)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            var utc = await hub.InvokeAsync<DateTimeOffset>(HubNames.Methods.Ping);
+            if (ReferenceEquals(_hub, hub))
+                ClockSynchronized?.Invoke(utc, System.Diagnostics.Stopwatch.GetElapsedTime(started) / 2);
+        }
+        catch { /* RoomState supplies a fallback clock sample. */ }
     }
 
     public Task KickAsync(Guid playerId) =>
         _hub?.InvokeAsync(HubNames.Methods.KickPlayer, playerId) ?? Task.CompletedTask;
+
+    public Task SendQuestionAsync(SendQuestionRequest request) =>
+        (_hub ?? throw new InvalidOperationException("Connect to a room first.")).InvokeAsync(HubNames.Methods.SendQuestion, request);
+
+    public Task CloseRoundAsync() =>
+        (_hub ?? throw new InvalidOperationException("Connect to a room first.")).InvokeAsync(HubNames.Methods.CloseRound);
 
     public async Task StopAsync()
     {
