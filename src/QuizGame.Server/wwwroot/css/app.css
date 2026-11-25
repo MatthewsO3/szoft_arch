@@ -1,0 +1,64 @@
+:root {
+  color-scheme: dark;
+  --bg: #14161f;
+  --panel: #1e212d;
+  --text: #f2f4f8;
+  --muted: #9aa3b5;
+  --accent: #4c8dff;
+  --danger: #ff6b6b;
+  --ok: #3ddc84;
+  --warn: #ffb020;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text); }
+body { font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+.header {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .6rem 1rem; padding-top: max(.6rem, env(safe-area-inset-top));
+  background: var(--panel); position: sticky; top: 0;
+}
+.header[hidden], [hidden] { display: none !important; }
+.me-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { width: 1rem; height: 1rem; border-radius: 50%; background: var(--muted); flex: none; }
+
+.conn { width: .8rem; height: .8rem; border-radius: 50%; background: var(--danger); flex: none; }
+.conn[data-state="online"] { background: var(--ok); }
+.conn[data-state="reconnecting"] { background: var(--warn); }
+
+main { max-width: 28rem; margin: 0 auto; padding: 1rem; }
+h1 { margin: 1rem 0 .5rem; font-size: 1.6rem; }
+.muted { color: var(--muted); }
+
+form { display: flex; flex-direction: column; gap: .4rem; }
+label { color: var(--muted); font-size: .9rem; margin-top: .6rem; }
+
+/* 16px font on inputs prevents iOS Safari's focus zoom. */
+input {
+  font: inherit; font-size: 16px; color: var(--text);
+  background: var(--panel); border: 2px solid transparent; border-radius: .6rem;
+  min-height: 48px; padding: 0 .9rem;
+}
+input:focus { outline: none; border-color: var(--accent); }
+#code { letter-spacing: .3em; font-size: 1.4rem; text-align: center; }
+
+button {
+  font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+  border: 0; border-radius: .6rem; min-height: 48px; padding: 0 1.2rem; margin-top: 1rem; cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: default; }
+button.secondary { background: transparent; border: 2px solid var(--muted); color: var(--muted); }
+p button { min-height: 36px; margin: 0 0 0 .5rem; padding: 0 .8rem; }
+
+.error { color: var(--danger); margin: .6rem 0 0; }
+
+.players { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: .4rem; }
+.players li {
+  display: flex; align-items: center; gap: .7rem;
+  background: var(--panel); border-radius: .6rem; padding: .6rem .9rem;
+}
+.players li.offline { opacity: .5; }
+.players .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.players .you { color: var(--muted); font-size: .85rem; }

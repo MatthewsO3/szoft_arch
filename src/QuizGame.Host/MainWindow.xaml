@@ -1,0 +1,86 @@
+<Window x:Class="QuizGame.Host.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Strategic Quiz – Game Master"
+        Width="760" Height="680" MinWidth="560" MinHeight="520"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="B2V" />
+    </Window.Resources>
+
+    <DockPanel Margin="24">
+        <!-- Status bar -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
+            <TextBlock DockPanel.Dock="Left" Text="{Binding ConnectionStatus}" Foreground="Gray" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="Firebrick" TextWrapping="Wrap"
+                       HorizontalAlignment="Right" TextAlignment="Right" />
+        </DockPanel>
+
+        <!-- Login -->
+        <StackPanel Visibility="{Binding ShowLogin, Converter={StaticResource B2V}}"
+                    MaxWidth="360" VerticalAlignment="Center">
+            <TextBlock Text="Game Master login" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16" />
+
+            <TextBlock Text="Server URL" Margin="0,0,0,2" />
+            <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}" Padding="6" Margin="0,0,0,10" />
+
+            <TextBlock Text="Username" Margin="0,0,0,2" />
+            <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Padding="6" Margin="0,0,0,10" />
+
+            <TextBlock Text="Password" Margin="0,0,0,2" />
+            <PasswordBox PasswordChanged="PasswordBox_PasswordChanged" Padding="6" Margin="0,0,0,16" />
+
+            <Button Content="Log in" Command="{Binding LoginCommand}" IsDefault="True" Padding="12,8" />
+        </StackPanel>
+
+        <!-- Room / lobby -->
+        <Grid Visibility="{Binding ShowRoom, Converter={StaticResource B2V}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                <Button Content="Create room" Command="{Binding CreateRoomCommand}" Padding="14,8" Margin="0,0,8,0" />
+                <Button Content="Close room" Command="{Binding CloseRoomCommand}" Padding="14,8" Margin="0,0,8,0" />
+                <Button Content="Log out" Command="{Binding LogoutCommand}" Padding="14,8" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Margin="0,24,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
+                <TextBlock Text="Room code" Foreground="Gray" HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding RoomCode}" FontSize="96" FontWeight="Bold" FontFamily="Consolas"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Margin="0,4,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
+                <TextBlock Text="Players join at (open on a phone, or use the code on the start page):"
+                           Foreground="Gray" HorizontalAlignment="Center" />
+                <TextBox Text="{Binding JoinUrl, Mode=OneWay}" IsReadOnly="True" BorderThickness="0"
+                         HorizontalAlignment="Center" FontSize="16" />
+            </StackPanel>
+
+            <GroupBox Grid.Row="3" Margin="0,20,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
+                <GroupBox.Header>
+                    <TextBlock Text="{Binding PlayerCountText}" FontWeight="SemiBold" />
+                </GroupBox.Header>
+                <ListBox ItemsSource="{Binding Players}" HorizontalContentAlignment="Stretch">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="2">
+                                <Button DockPanel.Dock="Right" Content="Kick" Padding="10,2"
+                                        Command="{Binding DataContext.KickCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}" />
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="Gray"
+                                           Margin="0,0,16,0" VerticalAlignment="Center" />
+                                <Ellipse Width="14" Height="14" Fill="{Binding ColorHex}" Margin="0,0,10,0" />
+                                <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </GroupBox>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -30,7 +30,9 @@ method, event, or DTO, update this file, `QuizGame.Contracts`, and
 | POST | `/questions` | GM | `QuestionUpsertRequest` → `QuestionDto` |
 | PUT | `/questions/{id}` | GM | `QuestionUpsertRequest` → `QuestionDto` |
 | DELETE | `/questions/{id}` | GM | → 204 (soft delete, `IsActive=false`) |
-| POST | `/rooms` | GM | `RoomSettings?` → `CreateRoomResponse` |
+| POST | `/rooms` | GM | `RoomSettings?` (optional body) → `CreateRoomResponse` (`201`) |
+| GET | `/rooms/{code}` | GM (owner) | → `RoomStateDto` |
+| DELETE | `/rooms/{code}` | GM (owner) | → 204; pushes `RoomClosed` to the room |
 | GET | `/rooms/{code}/exists` | – | → `RoomExistsResponse` |
 | POST | `/rooms/{code}/join` | – | `JoinRequest` → `JoinResponse` |
 | POST | `/rooms/{code}/rejoin` | Player | → `JoinResponse` |
@@ -67,6 +69,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker |
 | `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target (D3) |
 | `Rejoin` | Player/GM | – | Re-attach after disconnect; server replies with `RoomState` |
+| `LeaveRoom` | Player | – | Player leaves voluntarily; room gets `PlayerLeft` |
 | `Ping` | any | – | Latency / keepalive / clock sync |
 
 ### Server → client events
@@ -88,6 +91,8 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `PickWaiting` | others | `PlayerSummary` (who is choosing) |
 | `ScoreboardUpdated` | room | `ScoreEntry[]` |
 | `GameFinished` | room | `GameFinishedDto` |
+| `Kicked` | the kicked player | – (client should drop its session) |
+| `RoomClosed` | room | – (host closed the room or it was idle too long) |
 | `Error` | caller | `ErrorDto` |
 
 **Invariant:** never send a correct answer or another player's answer to a player
@@ -111,3 +116,24 @@ Initial set; extend as needed and keep in sync with the client:
 | `NotYourPick` | PickTerritory from someone who isn't the picker |
 | `InvalidPick` | Territory not free / not adjacent / not valid |
 | `NotEnoughPlayers` | StartGame below `MinPlayers` |
+| `InvalidCredentials` | Wrong username / password (REST 401) |
+| `PlayerNotFound` | Player is not (or no longer) in the room, e.g. kicked |
+| `InvalidName` | Display name empty or longer than 20 chars (REST 400) |
+| `RoomFull` | Room reached its player limit (REST 409) |
+| `NotInLobby` | Join attempted after the game started (REST 409) |
+| `InvalidSettings` | `RoomSettings` value out of range (REST 400) |
+| `NotAttached` | Hub method needs `HostAttach` / a joined room first |
+
+---
+
+## 4. Room connection notes
+
+- **Joining:** `POST /rooms/{code}/join` returns a player token bound to that room. The player then connects
+  to `/hubs/game` with the token; the server attaches them to the room groups from the token claims and
+  pushes `RoomState`. A player with no live connection stays in the room and is shown `Connected = false`.
+- **Rejoin:** the web app stores `{ token, roomCode }` and calls `POST /rooms/{code}/rejoin` on load, then
+  reconnects. Kicked or removed players get `PlayerNotFound`.
+- **Host:** logs in, `POST /rooms`, connects to the hub and calls `HostAttach(roomCode)` (again after every reconnect).
+- `GamePhase` is serialized as a number (`0` Lobby … `3` Results); `wwwroot/js/hubNames.js` exports `GamePhase`.
+- `RoomExistsResponse.Phase` is `null` when the room does not exist.
+- Rate limits: `/auth/login` 10/min and `/rooms/{code}/join|exists` 120/min per client IP (`RateLimits:*`); excess → `429`.

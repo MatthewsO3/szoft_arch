@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/QuizGame.Contracts/QuizGame.Contracts.csproj" />
+    <Project Path="src/QuizGame.Host/QuizGame.Host.csproj" />
     <Project Path="src/QuizGame.Server/QuizGame.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">

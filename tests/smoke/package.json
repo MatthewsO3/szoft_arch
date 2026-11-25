@@ -1,0 +1,8 @@
+{
+  "name": "quizgame-smoke",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end smoke test for room creation / joining using the real SignalR JS client.",
+  "scripts": { "test": "node smoke.mjs" },
+  "dependencies": { "@microsoft/signalr": "^8.0.0" }
+}
