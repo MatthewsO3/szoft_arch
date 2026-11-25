@@ -16,4 +16,10 @@ public static class ErrorCodes
     public const string InvalidSettings = "InvalidSettings";
     public const string NotAuthorized = "NotAuthorized";
     public const string NotAttached = "NotAttached";
+    public const string CategoryNotFound = "CategoryNotFound";
+    public const string CategoryNameTaken = "CategoryNameTaken";
+    public const string CategoryInUse = "CategoryInUse";
+    public const string QuestionNotFound = "QuestionNotFound";
+    public const string InvalidQuestion = "InvalidQuestion";
+    public const string InvalidCategory = "InvalidCategory";
 }
