@@ -57,3 +57,18 @@ For a stable demo use a VPS/domain and set `SITE_ADDRESS` for Caddy.
 | SQL injection | All data access is EF Core (parameterised queries only, no raw SQL). |
 | Abuse limits | Per-IP rate limits on login (10/min) and join/exists (120/min); room size cap; idle rooms are removed. |
 | Secrets | JWT key, admin password and DB password come from environment variables (`.env`, git-ignored); the server refuses to start without them. |
+
+### Question rounds (M2-A)
+
+The host opens a round with the hub method `SendQuestion`, players answer with `SubmitAnswer`, `RoundClosed` carries the
+ranking (see `docs/api-contract.md` §5). Rounds use the question bank (M2-B); the smoke test creates its own questions
+through the REST API. After starting the server:
+
+```
+cd tests/smoke
+npm ci
+node rounds.mjs        # ~12 s, includes the deadline timer
+```
+
+New tables `Rounds` and `Answers` need a migration: `dotnet ef migrations add Rounds --project src/QuizGame.Server`.
+

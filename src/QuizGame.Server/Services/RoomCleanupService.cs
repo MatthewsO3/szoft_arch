@@ -10,6 +10,7 @@ public sealed class RoomCleanupService(
     ConnectionRegistry registry,
     IHubContext<GameHub> hub,
     ISessionRecorder recorder,
+    RoundCoordinator roundCoordinator,
     ILogger<RoomCleanupService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -22,6 +23,7 @@ public sealed class RoomCleanupService(
                 foreach (var room in rooms.RemoveIdleRooms(r => registry.HasConnections(r.Code)))
                 {
                     logger.LogInformation("Removed idle room {Room}", room.Code);
+                    roundCoordinator.Cancel(room.Code);
                     await recorder.SessionEndedAsync(room.SessionId, stoppingToken);
                     await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.RoomClosed, stoppingToken);
                 }
