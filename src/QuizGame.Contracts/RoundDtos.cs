@@ -1,5 +1,11 @@
 namespace QuizGame.Contracts;
 
+/// <summary>Host-only round presentation. Never send this payload to players.</summary>
+public sealed record QuestionForHost(Guid RoundId, QuestionDto Question, DateTimeOffset ServerDeadlineUtc);
+
+/// <summary>Returned by SubmitAnswer only after the server has recorded the answer.</summary>
+public sealed record AnswerAccepted(Guid RoundId);
+
 /// <summary>Args for the host opening a round (plan §6.3 SendQuestion).</summary>
 public sealed record SendQuestionRequest
 {

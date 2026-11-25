@@ -11,7 +11,7 @@ namespace QuizGame.Server.Hubs;
 /// <summary>
 /// The single game hub. Group membership comes from the token claims, never from client arguments,
 /// so a player can only ever join the room their token was issued for (plan §6.3).
-/// This slice covers the room connection: attach, presence, kick, leave. Game methods come later.
+/// Handles room presence and question rounds; phase and territory methods arrive with the map.
 /// </summary>
 [Authorize]
 public sealed class GameHub(
@@ -58,8 +58,7 @@ public sealed class GameHub(
         registry.Connect(room, new ConnectionEntry(Context.ConnectionId, room.Code, Roles.GameMaster, null));
         room.Touch(time.GetUtcNow());
 
-        await Clients.Caller.SendAsync(HubNames.Events.RoomState, room.Snapshot(time.GetUtcNow()));
-        await rounds.SendOpenRoundAsync(room, Clients.Caller, null);
+        await rounds.SendStateAsync(room, Clients.Caller, null);
     }
 
     /// <summary>
@@ -77,8 +76,7 @@ public sealed class GameHub(
         var info = registry.Get(Context.ConnectionId);
         if (info is null || !rooms.TryGet(info.RoomCode, out var room))
             throw new HubException(ErrorCodes.NotAttached);
-        await Clients.Caller.SendAsync(HubNames.Events.RoomState, room.Snapshot(time.GetUtcNow()));
-        await rounds.SendOpenRoundAsync(room, Clients.Caller, null);
+        await rounds.SendStateAsync(room, Clients.Caller, null);
     }
 
     [Authorize(Policy = Policies.GameMasterOnly)]
@@ -131,7 +129,7 @@ public sealed class GameHub(
 
     /// <summary>A player's answer. The receive time is stamped here, on entry, never taken from the client (plan §7.2).</summary>
     [Authorize(Policy = Policies.PlayerOnly)]
-    public async Task SubmitAnswer(SubmitAnswerRequest request)
+    public async Task<AnswerAccepted> SubmitAnswer(SubmitAnswerRequest request)
     {
         var receivedAt = time.GetUtcNow();
 
@@ -142,6 +140,7 @@ public sealed class GameHub(
 
         var error = await rounds.SubmitAsync(room, playerId, request, receivedAt);
         if (error is not null) throw new HubException(error);
+        return new AnswerAccepted(request.RoundId);
     }
 
     /// <summary>Latency / keepalive and clock sync (plan §7.3).</summary>
@@ -182,8 +181,7 @@ public sealed class GameHub(
         if (changed is not null)
             await Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.PlayerConnectionChanged, changed);
 
-        await Clients.Caller.SendAsync(HubNames.Events.RoomState, room.Snapshot(time.GetUtcNow()));
-        await rounds.SendOpenRoundAsync(room, Clients.Caller, playerId);
+        await rounds.SendStateAsync(room, Clients.Caller, playerId);
     }
 
     private async Task RemovePlayerConnectionsAsync(string code, Guid playerId, string? notifyEvent)

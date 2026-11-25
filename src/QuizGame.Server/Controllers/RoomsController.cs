@@ -51,7 +51,7 @@ public sealed class RoomsController(
     public ActionResult<RoomStateDto> Get(string code)
     {
         if (!TryGetOwnedRoom(code, out var room, out var error)) return error!;
-        return room.Snapshot(time.GetUtcNow());
+        return room.Snapshot(time.GetUtcNow(), forHost: true);
     }
 
     /// <summary>Closes a room and tells everybody in it.</summary>

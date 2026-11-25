@@ -31,5 +31,8 @@ export function createHub(token, handlers) {
     get isConnected() { return connection.state === signalR.HubConnectionState.Connected; },
     get isDisconnected() { return connection.state === signalR.HubConnectionState.Disconnected; },
     leaveRoom: () => connection.invoke(Methods.LeaveRoom),
+    submitAnswer: (answer) => connection.invoke(Methods.SubmitAnswer, answer),
+    ping: () => connection.invoke(Methods.Ping),
+    rejoin: () => connection.invoke(Methods.Rejoin),
   };
 }

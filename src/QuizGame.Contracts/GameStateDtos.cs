@@ -57,6 +57,14 @@ public sealed record RoomStateDto
     public IReadOnlyList<PlayerSummary> Players { get; init; } = [];
     public MapDto? Map { get; init; }
     public CurrentRoundDto? CurrentRound { get; init; }
+    /// <summary>Caller-specific active question. Players must never receive HostQuestion.</summary>
+    public QuestionForPlayer? PlayerQuestion { get; init; }
+    public QuestionForHost? HostQuestion { get; init; }
+    /// <summary>Whether the calling player has an accepted answer in the current round.</summary>
+    public bool HasAnswered { get; init; }
+    public AnswerCount? AnswerCount { get; init; }
+    /// <summary>Latest completed round, for recovery after missing RoundClosed.</summary>
+    public RoundClosedDto? LastRoundResult { get; init; }
     public IReadOnlyList<ScoreEntry> Scoreboard { get; init; } = [];
     public DateTimeOffset ServerUtcNow { get; init; }
 }

@@ -41,6 +41,25 @@
       </p>
       <button id="leave-btn" type="button" class="secondary">Leave room</button>
     </section>
+    <section id="screen-question" class="screen" hidden aria-label="Question round">
+      <h1>Look at the projector</h1>
+      <p class="countdown" id="question-time" aria-label="Time remaining"></p>
+      <div id="question-options" class="question-options"></div>
+      <form id="estimate-form" hidden novalidate>
+        <label for="estimate">Your estimate <span id="estimate-unit"></span></label>
+        <input id="estimate" inputmode="decimal" autocomplete="off" maxlength="40">
+        <button id="estimate-submit" type="submit">Send answer</button>
+      </form>
+      <p id="question-status" role="status" aria-live="polite"></p>
+      <p id="game-offline" class="error" hidden>Connection lost.
+        <button id="game-reconnect-btn" type="button">Reconnect</button>
+      </p>
+      <div id="round-result" hidden>
+        <h2 id="correct-answer"></h2>
+        <p id="personal-result"></p>
+        <ol id="round-ranking" class="ranking"></ol>
+      </div>
+    </section>
   </main>
 
   <script src="js/lib/signalr.min.js"></script>

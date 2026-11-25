@@ -69,7 +69,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `SendQuestion` | GM | `SendQuestionRequest` | Opens a round |
 | `CloseRound` | GM | – | Ends the current round early |
 | `ConfirmBattle` | GM | – | Confirms an attacker's nomination (D3) |
-| `SubmitAnswer` | Player | `SubmitAnswerRequest` | Records an answer (first is final, D7) |
+| `SubmitAnswer` | Player | `SubmitAnswerRequest` | Returns `AnswerAccepted { roundId }` after recording an answer (first is final, D7) |
 | `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker |
 | `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target (D3) |
 | `Rejoin` | Player/GM | – | Re-attach after disconnect; server replies with `RoomState` |
@@ -86,7 +86,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `PlayerConnectionChanged` | room | `PlayerSummary` |
 | `PhaseChanged` | room | `GamePhase` |
 | `MapUpdated` | room | `MapUpdate` (changed cells + scoreboard) |
-| `QuestionStarted` | gm group | `QuestionDto` (includes correct answer) |
+| `QuestionStarted` | gm group | `QuestionForHost { roundId, question: QuestionDto, serverDeadlineUtc }` (includes correct answer) |
 | `QuestionStarted` | players group | `QuestionForPlayer` (no correct answer); battle → only the two players |
 | `BattleAnnounced` | non-participants | `BattleAnnouncement` |
 | `AnswerCountChanged` | gm group | `AnswerCount` |
@@ -160,11 +160,10 @@ Initial set; extend as needed and keep in sync with the client:
 - **Opening:** `SendQuestion` works while no round is open. Kind ↔ type: `Grab` needs a multiple-choice question,
   `BaseOrder` and `Battle` an estimation question. Phase gating (BaseOrder only in BaseSelection, Grab/Battle only in
   Conquest) arrives with the phase machine; until then a round may open in any phase.
-- **Who receives what:** host group → `QuestionStarted` with the full `QuestionDto` (correct answer included) plus
+- **Who receives what:** host group → `QuestionStarted` with `QuestionForHost` (round ID, deadline, full question including correct answer) plus
   `AnswerCountChanged(0, n)`; players → `QuestionStarted` with `QuestionForPlayer` (options only, no text, no correct
   answer, `ServerDeadlineUtc`). Battle: only attacker and defender get the question, everybody else `BattleAnnounced`.
-- **Round id:** `QuestionForPlayer.RoundId` is the id players answer with. The host does not need it (`CloseRound` has no
-  argument); it is in `RoomState.CurrentRound` and in `RoundClosedDto.RoundId`.
+- **Round id:** both question payloads carry `RoundId`; the host also receives the authoritative deadline.
 - **Deadline:** `ServerDeadlineUtc = start + question.TimeLimitSeconds` (room default if 0). Answers are accepted up to
   deadline + 300 ms (`Rounds:GraceMilliseconds`), later ones get `AnswerTooLate`. Receive time is stamped by the server.
 - **Answering:** the first answer is final (`AlreadyAnswered`). Multiple choice sends `Option` (`'A'`–`'D'`, case-insensitive),
@@ -178,7 +177,15 @@ Initial set; extend as needed and keep in sync with the client:
     `BaseOrder` → `WinnerPlayerIds` lists everybody in ranking order (the pick order). `IsCorrect` = exact hit.
   - Battle: same distance ranking, but a tie goes to the defender; `WinnerPlayerIds` has one entry.
     The defender is the owner of the target territory (needs the map, M3).
-- **Reconnect:** a player or host that (re)attaches while a round is open gets `QuestionStarted` again (same deadline).
+- **Reconnect:** `RoomState` includes a caller-specific `PlayerQuestion` or `HostQuestion`, `HasAnswered` for the caller, and host-only `AnswerCount`. `LastRoundResult` restores missed results. The active question takes precedence. Snapshots and round events are serialized per room to preserve delivery order.
 - **Persistence:** on close the `Rounds` row and its `Answers` rows are written in one transaction (players without an
   answer have no `Answers` row). History write failures are logged and never affect the game.
 
+
+- **Acceptance:** `SubmitAnswer` returns `AnswerAccepted { roundId }` only after recording the answer.
+  Rejections throw `HubException` with a stable code. Unknown transport failures keep input locked until
+  a fresh snapshot confirms whether an answer was recorded. No correct answers are sent to players
+  before closure; host snapshots are never broadcast to players.
+- **Host controls:** select a row in the question bank and use **Send selected question**. Multiple-choice
+  questions open a Grab round; estimation questions open a BaseOrder round. **Close round** closes early.
+  Battle selection and phase gating remain later map/game work.
