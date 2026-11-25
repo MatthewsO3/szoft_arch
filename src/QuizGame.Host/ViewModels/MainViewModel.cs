@@ -29,6 +29,7 @@ public sealed class MainViewModel : ViewModelBase
 {
     private readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
     private readonly GameConnection _connection = new();
+    private readonly Action<string> _copyToClipboard;
     private ApiClient? _api;
     private string? _token;
 
@@ -38,15 +39,18 @@ public sealed class MainViewModel : ViewModelBase
     private string _connectionStatus = "Not connected";
     private string _roomCode = "";
     private string _joinUrl = "";
+    private string _copyRoomCodeText = "Copy";
     private bool _loggedIn;
     private int _selectedTabIndex;
+    private int _copyFeedbackVersion;
 
-    public MainViewModel() : this(new WpfQuestionBankDialogService())
+    public MainViewModel() : this(new WpfQuestionBankDialogService(), text => System.Windows.Clipboard.SetText(text))
     {
     }
 
-    public MainViewModel(IQuestionBankDialogService questionBankDialogs)
+    public MainViewModel(IQuestionBankDialogService questionBankDialogs, Action<string>? copyToClipboard = null)
     {
+        _copyToClipboard = copyToClipboard ?? (_ => { });
         QuestionBank = new QuestionBankViewModel(questionBankDialogs);
 
         LoginCommand = new AsyncRelayCommand(_ => LoginAsync(), onError: ShowError);
@@ -54,6 +58,7 @@ public sealed class MainViewModel : ViewModelBase
         CreateRoomCommand = new AsyncRelayCommand(_ => CreateRoomAsync(), onError: ShowError);
         CloseRoomCommand = new AsyncRelayCommand(_ => CloseRoomAsync(), _ => HasRoom, ShowError);
         KickCommand = new AsyncRelayCommand(p => KickAsync((PlayerItem)p!), p => p is PlayerItem, ShowError);
+        CopyRoomCodeCommand = new RelayCommand(_ => CopyRoomCode(), _ => HasRoom);
 
         _connection.RoomStateReceived += s => OnUi(() => ApplyState(s));
         _connection.PlayerJoined += p => OnUi(() => Upsert(p));
@@ -72,6 +77,7 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand CreateRoomCommand { get; }
     public ICommand CloseRoomCommand { get; }
     public ICommand KickCommand { get; }
+    public ICommand CopyRoomCodeCommand { get; }
 
     public string ServerUrl { get => _serverUrl; set => Set(ref _serverUrl, value); }
     public string Username { get => _username; set => Set(ref _username, value); }
@@ -79,6 +85,7 @@ public sealed class MainViewModel : ViewModelBase
 
     public string ErrorMessage { get => _errorMessage; set => Set(ref _errorMessage, value); }
     public string ConnectionStatus { get => _connectionStatus; set => Set(ref _connectionStatus, value); }
+    public string CopyRoomCodeText { get => _copyRoomCodeText; private set => Set(ref _copyRoomCodeText, value); }
 
     public string RoomCode
     {
@@ -86,8 +93,11 @@ public sealed class MainViewModel : ViewModelBase
         private set
         {
             if (!Set(ref _roomCode, value)) return;
+            _copyFeedbackVersion++;
+            CopyRoomCodeText = "Copy";
             Raise(nameof(HasRoom));
             ((AsyncRelayCommand)CloseRoomCommand).RaiseCanExecuteChanged();
+            ((RelayCommand)CopyRoomCodeCommand).RaiseCanExecuteChanged();
         }
     }
 
@@ -190,6 +200,31 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     private async Task KickAsync(PlayerItem player) => await _connection.KickAsync(player.Id);
+
+    private void CopyRoomCode()
+    {
+        if (!HasRoom) return;
+        ErrorMessage = "";
+        try
+        {
+            _copyToClipboard(RoomCode);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            return;
+        }
+
+        CopyRoomCodeText = "Copied!";
+        _ = ResetCopyFeedbackAsync(++_copyFeedbackVersion);
+    }
+
+    private async Task ResetCopyFeedbackAsync(int version)
+    {
+        await Task.Delay(1500);
+        if (version == _copyFeedbackVersion)
+            CopyRoomCodeText = "Copy";
+    }
 
     private void ClearRoom()
     {
