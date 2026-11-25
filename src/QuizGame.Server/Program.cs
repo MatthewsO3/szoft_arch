@@ -52,12 +52,8 @@ builder.Services.AddSingleton<GameRoomManager>();
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<RoundCoordinator>();
 
-// Question source for rounds. The question bank (M2-B) replaces this registration with its EF-backed provider.
-builder.Services.AddSingleton<IQuestionProvider>(_ =>
-{
-    var bank = new InMemoryQuestionProvider();
-    return builder.Environment.IsDevelopment() ? bank.SeedDemo() : bank;
-});
+// Question source for rounds: the question bank (EF Core, or in-memory in Development without a database).
+builder.Services.AddSingleton<IQuestionProvider, BankQuestionProvider>();
 builder.Services.AddHostedService<RoomCleanupService>();
 
 builder.Services.AddControllers();

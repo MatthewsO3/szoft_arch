@@ -43,6 +43,10 @@ Validation (plan §5.2): a multiple-choice question has 2–4 options with exact
 correct; an estimation question has `CorrectNumber` set and no options. Player names
 are 1–20 chars, trimmed, unique per room (case-insensitive).
 
+Enums are serialized as numbers on the wire (`QuestionType`: `0` MultipleChoice, `1`
+Estimation), matching `GamePhase`. `GET /questions` query enums accept the same
+numeric values (e.g. `?type=1`); `page` defaults to 1 and `pageSize` to 20 (max 100).
+
 ---
 
 ## 2. SignalR hub (`/hubs/game`)
@@ -123,12 +127,17 @@ Initial set; extend as needed and keep in sync with the client:
 | `NotInLobby` | Join attempted after the game started (REST 409) |
 | `InvalidSettings` | `RoomSettings` value out of range (REST 400) |
 | `NotAttached` | Hub method needs `HostAttach` / a joined room first |
-| `QuestionNotFound` | `SendQuestion`: no active question with that id |
+| `QuestionNotFound` | No active question with the given id (REST 404; `SendQuestion` over the hub) |
 | `RoundInProgress` | `SendQuestion` while another round is open |
 | `NoActiveRound` | `CloseRound` / `SubmitAnswer` with no open round, or for a round that is not the open one |
 | `InvalidRound` | Kind does not fit the question type (Grab = multiple choice, BaseOrder/Battle = estimation), malformed question, or an invalid battle (no attacker/target, target has no owner, own territory) |
 | `InvalidAnswer` | Missing/unknown option (multiple choice) or missing number (estimation) |
 | `NotParticipant` | The player is not part of this round (battle: only attacker and defender) |
+| `CategoryNotFound` | No category with the given id (REST 404) |
+| `CategoryNameTaken` | A category with that name already exists (REST 409) |
+| `CategoryInUse` | Category still has questions; cannot be deleted (REST 409) |
+| `InvalidCategory` | Category name empty or longer than 64 chars (REST 400) |
+| `InvalidQuestion` | Question fails type-specific validation, plan §5.2 (REST 400) |
 
 ---
 

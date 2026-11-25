@@ -61,8 +61,8 @@ For a stable demo use a VPS/domain and set `SITE_ADDRESS` for Caddy.
 ### Question rounds (M2-A)
 
 The host opens a round with the hub method `SendQuestion`, players answer with `SubmitAnswer`, `RoundClosed` carries the
-ranking (see `docs/api-contract.md` §5). Until the question bank (M2-B) exists, Development ships two demo questions
-(`00000000-0000-0000-0000-00000000a001` multiple choice, `…a002` estimation). After starting the server:
+ranking (see `docs/api-contract.md` §5). Rounds use the question bank (M2-B); the smoke test creates its own questions
+through the REST API. After starting the server:
 
 ```
 cd tests/smoke

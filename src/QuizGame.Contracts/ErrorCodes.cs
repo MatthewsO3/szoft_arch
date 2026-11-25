@@ -28,4 +28,11 @@ public static class ErrorCodes
     public const string InvalidRound = "InvalidRound";
     public const string InvalidAnswer = "InvalidAnswer";
     public const string NotParticipant = "NotParticipant";
+
+    // Question bank (REST)
+    public const string CategoryNotFound = "CategoryNotFound";
+    public const string CategoryNameTaken = "CategoryNameTaken";
+    public const string CategoryInUse = "CategoryInUse";
+    public const string InvalidQuestion = "InvalidQuestion";
+    public const string InvalidCategory = "InvalidCategory";
 }

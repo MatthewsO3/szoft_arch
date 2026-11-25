@@ -4,8 +4,8 @@ using QuizGame.Contracts;
 namespace QuizGame.Server.Services;
 
 /// <summary>
-/// Source of questions for a round. The question bank (M2-B, EF Core) provides the real implementation and
-/// replaces <see cref="InMemoryQuestionProvider"/> in Program.cs; the round logic only depends on this.
+/// Source of questions for a round; the round logic only depends on this. <see cref="BankQuestionProvider"/> serves
+/// it from the question bank (EF Core or in-memory, M2-B); <see cref="InMemoryQuestionProvider"/> is for unit tests.
 /// Must return only active questions, complete with options / correct answer.
 /// </summary>
 public interface IQuestionProvider
@@ -13,7 +13,7 @@ public interface IQuestionProvider
     Task<QuestionDto?> GetActiveAsync(Guid id, CancellationToken ct = default);
 }
 
-/// <summary>Placeholder bank for tests and Development until the database-backed one exists.</summary>
+/// <summary>Simple in-memory provider for unit tests.</summary>
 public sealed class InMemoryQuestionProvider : IQuestionProvider
 {
     private readonly ConcurrentDictionary<Guid, QuestionDto> _questions = new();
@@ -59,4 +59,10 @@ public sealed class InMemoryQuestionProvider : IQuestionProvider
         });
         return this;
     }
+}
+
+/// <summary>Round questions come from the question bank (<see cref="IQuestionBank.GetQuestionAsync"/> returns active questions only).</summary>
+public sealed class BankQuestionProvider(IQuestionBank bank) : IQuestionProvider
+{
+    public Task<QuestionDto?> GetActiveAsync(Guid id, CancellationToken ct = default) => bank.GetQuestionAsync(id, ct);
 }

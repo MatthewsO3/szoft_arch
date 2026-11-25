@@ -1,5 +1,5 @@
 // End-to-end smoke test for question rounds (M2-A): open round, answers, evaluation, timer, rejoin.
-// Needs the server in Development (it ships two demo questions with fixed ids) and at least the M1 room system.
+// Creates its own two questions through the question-bank REST API (M2-B), so it works against any server.
 // Usage: node rounds.mjs [baseUrl]   (env: BASE_URL, ADMIN_USER, ADMIN_PASS)
 import * as signalR from '@microsoft/signalr';
 
@@ -7,8 +7,8 @@ const BASE = process.argv[2] ?? process.env.BASE_URL ?? 'http://localhost:5084';
 const ADMIN_USER = process.env.ADMIN_USER ?? 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS ?? 'admin';
 
-const DEMO_MC = '00000000-0000-0000-0000-00000000a001';   // correct option B, 10 s
-const DEMO_EST = '00000000-0000-0000-0000-00000000a002';  // correct number 8849, 10 s
+let DEMO_MC;   // created below: multiple choice, correct option B, 10 s
+let DEMO_EST;  // created below: estimation, correct number 8849, 10 s
 const Kind = { BaseOrder: 0, Grab: 1, Battle: 2 };
 
 let failures = 0;
@@ -74,6 +74,19 @@ try {
   const login = await api('/api/auth/login', { method: 'POST', body: { username: ADMIN_USER, password: ADMIN_PASS } });
   check(login.status === 200, 'host logs in');
   const gmToken = login.body.token;
+
+  // Own test questions via the question bank (M2-B).
+  const cat = await api('/api/categories', { method: 'POST', token: gmToken, body: { name: `rounds-smoke-${Date.now()}` } });
+  check(cat.status === 201 || cat.status === 200, 'create test category');
+  const catId = cat.body.id;
+  const mc = await api('/api/questions', { method: 'POST', token: gmToken, body: {
+    categoryId: catId, type: 0, text: 'Smoke MC', difficulty: 1, timeLimitSeconds: 10,
+    options: [{ label: 'A', text: 'a', isCorrect: false }, { label: 'B', text: 'b', isCorrect: true },
+              { label: 'C', text: 'c', isCorrect: false }, { label: 'D', text: 'd', isCorrect: false }] } });
+  const est = await api('/api/questions', { method: 'POST', token: gmToken, body: {
+    categoryId: catId, type: 1, text: 'Smoke estimation', difficulty: 1, timeLimitSeconds: 10, options: [], correctNumber: 8849, unit: 'm' } });
+  check(mc.status === 201 && est.status === 201, 'create test questions');
+  DEMO_MC = mc.body.id; DEMO_EST = est.body.id;
 
   const room = (await api('/api/rooms', { method: 'POST', token: gmToken })).body;
   const code = room.roomCode;
