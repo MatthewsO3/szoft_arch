@@ -13,7 +13,7 @@
                 <StackPanel Width="1000" Margin="12">
                     <TextBlock Text="{Binding Text}" FontSize="40" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding Countdown}" FontSize="40" Foreground="#FFCA6A" Margin="0,20" />
-                    <ProgressBar Value="{Binding TimeRemainingFraction}" Maximum="1" Height="12" Margin="0,0,0,16"
+                    <ProgressBar Value="{Binding TimeRemainingFraction, Mode=OneWay}" Maximum="1" Height="12" Margin="0,0,0,16"
                                  Foreground="#FFCA6A" AutomationProperties.Name="Time remaining" />
                     <TextBlock Text="{Binding Prompt}" FontSize="26" TextWrapping="Wrap" />
                     <ItemsControl ItemsSource="{Binding Options}">
