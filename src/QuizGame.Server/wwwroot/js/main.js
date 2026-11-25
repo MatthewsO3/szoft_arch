@@ -5,10 +5,13 @@ import { ErrorCodes } from './hubNames.js';
 import { loadSession, saveSession, clearSession } from './session.js';
 import { initJoin } from './ui/join.js';
 import { createLobby } from './ui/lobby.js';
+import { createQuestion } from './ui/question.js';
+import { createClock } from './util/timer.js';
 
 const screens = {
   join: document.getElementById('screen-join'),
   lobby: document.getElementById('screen-lobby'),
+  question: document.getElementById('screen-question'),
 };
 const header = document.getElementById('header');
 const meChip = document.getElementById('me-chip');
@@ -18,6 +21,37 @@ const connEl = document.getElementById('conn');
 const lobby = createLobby();
 let hub = null;
 let session = null;
+let connectionVersion = 0;
+const clock = createClock();
+const question = createQuestion({
+  clock,
+  send: (answer) => hub.submitAnswer(answer),
+  recover: () => hub.rejoin(),
+  playerId: () => session?.player.id,
+});
+
+async function syncClock() {
+  const current = hub;
+  if (!current?.isConnected) return;
+  const started = performance.now();
+  try {
+    const utc = await current.ping();
+    if (hub === current) clock.sync(utc, performance.now() - started);
+  } catch { /* A new RoomState also synchronizes the clock. */ }
+}
+
+function applyState(state) {
+  clock.sync(state.serverUtcNow);
+  lobby.setState(state);
+  question.reset();
+  if (state.playerQuestion) {
+    question.start(state.playerQuestion, state.hasAnswered);
+    show('question');
+  } else if (state.lastRoundResult) {
+    question.close(state.lastRoundResult);
+    show('question');
+  } else show('lobby');
+}
 
 const join = initJoin({ onJoined: (response, roomCode) => enterRoom(response, roomCode) });
 
@@ -29,16 +63,21 @@ function show(name) {
 function setConnState(state) {
   connEl.dataset.state = state;
   lobby.showOffline(state === 'offline');
+  question.setOnline(state === 'online');
+  document.getElementById('game-offline').hidden = state === 'online';
+  if (state === 'online') syncClock();
 }
 
 /** Leaves the room locally and returns to the join screen with an optional message. */
 async function backToJoin(message) {
+  connectionVersion++;
   clearSession();
   session = null;
   const old = hub;
   hub = null;
   try { await old?.stop(); } catch { /* ignore */ }
   lobby.reset();
+  question.reset();
   show('join');
   join.message(message ?? '');
   join.focus();
@@ -57,10 +96,17 @@ async function enterRoom(response, roomCode) {
 
 async function connect() {
   if (!session) return;
-  hub?.stop();
-  hub = createHub(session.token, {
+  const version = ++connectionVersion;
+  const old = hub;
+  hub = null;
+  setConnState('reconnecting');
+  try { await old?.stop(); } catch { /* the old connection is already unusable */ }
+  if (version !== connectionVersion || !session) return;
+  const handlers = {
     onState: setConnState,
-    RoomState: (state) => lobby.setState(state),
+    RoomState: applyState,
+    QuestionStarted: (data) => { question.start(data); show('question'); },
+    RoundClosed: (data) => { if (question.close(data)) show('question'); },
     PlayerJoined: (player) => lobby.upsert(player),
     PlayerConnectionChanged: (player) => lobby.upsert(player),
     PlayerLeft: (player) => lobby.remove(player.id),
@@ -69,16 +115,19 @@ async function connect() {
     Error: (err) => {
       if (err.code === ErrorCodes.RoomNotFound || err.code === ErrorCodes.PlayerNotFound) backToJoin(err.message);
     },
-  });
+  };
+  hub = createHub(session.token, Object.fromEntries(Object.entries(handlers).map(([name, handler]) =>
+    [name, (...args) => { if (version === connectionVersion) handler(...args); }])));
 
   try {
     await hub.start();
   } catch {
-    setConnState('offline');
+    if (version === connectionVersion) setConnState('offline');
   }
 }
 
 document.getElementById('reconnect-btn').addEventListener('click', connect);
+document.getElementById('game-reconnect-btn').addEventListener('click', connect);
 
 document.getElementById('leave-btn').addEventListener('click', async () => {
   try { await hub?.leaveRoom(); } catch { /* server removes us on next join attempt anyway */ }
@@ -88,6 +137,7 @@ document.getElementById('leave-btn').addEventListener('click', async () => {
 // Mobile browsers suspend sockets when the screen locks: reconnect when the page is visible again.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && session && hub?.isDisconnected) connect();
+  else if (document.visibilityState === 'visible') syncClock();
 });
 
 async function boot() {

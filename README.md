@@ -19,6 +19,24 @@ and log in from the host app with that same URL so the join link shows it.
 End-to-end check (needs a running server): `cd tests/smoke && npm install && node smoke.mjs`.
 Endpoints, hub events and error codes: [docs/api-contract.md](docs/api-contract.md).
 
+### M2 part D: question clients
+
+The phone client supports multiple-choice and estimation input, a server-synchronized
+countdown, submission acknowledgment, and round results. The host's **Projector** button
+opens a separate question window; F11 toggles fullscreen and Escape exits fullscreen.
+The window shares the host connection and retains round state when closed/reopened.
+
+Create a room, join with phones, select a question in the **Question bank** tab, and use
+**Send selected question**. **Close round** ends it early; the projector reveals the answer
+and ranking when the round closes. Reconnecting clients restore their question, accepted
+answer status, or latest results from the server snapshot.
+
+Client logic tests: `node --test tests/web/*.test.mjs` (Node 22.7+; no packages required).
+To preview the phone question screens with sample events without starting the server, run
+`node tests/web/preview.mjs` and open `http://127.0.0.1:5085`. This local fixture serves
+the real question UI with sample data; it does not implement or test server rounds.
+Manual integration checks: [M2 client checklist](docs/m2-client-checklist.md).
+
 ### Database (PostgreSQL via EF Core)
 
 Game masters (PBKDF2-SHA256 password hashes), created sessions and joined players are stored in PostgreSQL.

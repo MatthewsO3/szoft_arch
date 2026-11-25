@@ -6,6 +6,52 @@ namespace QuizGame.Domain.Tests;
 
 public class GameRoomRoundTests
 {
+    [Fact]
+    public void Reconnect_snapshot_is_caller_specific_and_recovers_closed_results()
+    {
+        var (room, a, b, _) = RoomWithPlayers();
+        var q = Mc();
+        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
+        room.TrySubmitAnswer(a.Id, Opt(round, 'B'), Make.T0, Grace);
+
+        var player = room.Snapshot(Make.T0, a.Id);
+        Assert.True(player.HasAnswered);
+        Assert.Null(player.HostQuestion);
+        Assert.Null(player.AnswerCount);
+        Assert.Equal(round.RoundId, player.PlayerQuestion!.RoundId);
+        Assert.False(room.Snapshot(Make.T0, b.Id).HasAnswered);
+        Assert.Null(room.Snapshot(Make.T0, Guid.NewGuid()).PlayerQuestion);
+
+        var host = room.Snapshot(Make.T0, forHost: true);
+        Assert.Equal(q, host.HostQuestion!.Question);
+        Assert.Equal(round.Deadline, host.HostQuestion.ServerDeadlineUtc);
+        Assert.Equal(1, host.AnswerCount!.Answered);
+        Assert.Null(host.PlayerQuestion);
+
+        var result = room.CloseRound(round.RoundId, Make.T0)!.Result;
+        var closed = room.Snapshot(Make.T0, a.Id);
+        Assert.Null(closed.PlayerQuestion);
+        Assert.Null(closed.CurrentRound);
+        Assert.False(closed.HasAnswered);
+        Assert.Equal(result, closed.LastRoundResult);
+    }
+
+    [Fact]
+    public void Battle_snapshot_excludes_question_for_spectators()
+    {
+        var (room, a, b, c) = RoomWithPlayers();
+        room.TerritoryOwner = _ => b.Id;
+        var q = Est();
+        Assert.True(room.TryStartRound(q, new SendQuestionRequest
+        {
+            QuestionId = q.Id, Kind = RoundKind.Battle, AttackerId = a.Id, TargetTerritoryIndex = 0,
+        }, Make.T0).Ok);
+        Assert.NotNull(room.Snapshot(Make.T0, a.Id).PlayerQuestion);
+        Assert.NotNull(room.Snapshot(Make.T0, b.Id).PlayerQuestion);
+        Assert.Null(room.Snapshot(Make.T0, c.Id).PlayerQuestion);
+        Assert.Null(room.Snapshot(Make.T0, c.Id).HostQuestion);
+    }
+
     private static readonly TimeSpan Grace = TimeSpan.FromMilliseconds(300);
 
     private static QuestionDto Mc(int seconds = 10) => new()

@@ -83,10 +83,10 @@ try {
     categoryId: catId, type: 0, text: 'Smoke MC', difficulty: 1, timeLimitSeconds: 10,
     options: [{ label: 'A', text: 'a', isCorrect: false }, { label: 'B', text: 'b', isCorrect: true },
               { label: 'C', text: 'c', isCorrect: false }, { label: 'D', text: 'd', isCorrect: false }] } });
-  const est = await api('/api/questions', { method: 'POST', token: gmToken, body: {
+  const estCreated = await api('/api/questions', { method: 'POST', token: gmToken, body: {
     categoryId: catId, type: 1, text: 'Smoke estimation', difficulty: 1, timeLimitSeconds: 10, options: [], correctNumber: 8849, unit: 'm' } });
-  check(mc.status === 201 && est.status === 201, 'create test questions');
-  DEMO_MC = mc.body.id; DEMO_EST = est.body.id;
+  check(mc.status === 201 && estCreated.status === 201, 'create test questions');
+  DEMO_MC = mc.body.id; DEMO_EST = estCreated.body.id;
 
   const room = (await api('/api/rooms', { method: 'POST', token: gmToken })).body;
   const code = room.roomCode;
@@ -121,7 +121,7 @@ try {
   const sentAt = Date.now();
   await host.conn.invoke('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab });
   const hostQ = (await host.waitFor('QuestionStarted')).payload;
-  check(hostQ.correctOption === 'B' && !!hostQ.text, 'host receives the full question incl. correct answer');
+  check(hostQ.question.correctOption === 'B' && !!hostQ.question.text && !!hostQ.roundId && !!hostQ.serverDeadlineUtc, 'host receives the full question incl. correct answer');
   const qa = (await anna.hub.waitFor('QuestionStarted')).payload;
   const qb = (await bela.hub.waitFor('QuestionStarted')).payload;
   await cili.hub.waitFor('QuestionStarted');
@@ -129,20 +129,31 @@ try {
   check(!('correctOption' in qa) && !('text' in qa) && !('correctNumber' in qa), 'player payload has no correct answer and no question text');
   const deadlineMs = Date.parse(qa.serverDeadlineUtc) - sentAt;
   check(deadlineMs > 9000 && deadlineMs < 11500, `serverDeadlineUtc is ~10 s ahead (${deadlineMs} ms)`);
-  check(qa.roundId === qb.roundId && !!qa.roundId, 'players are in the same round (host learns the id from RoomState.currentRound / RoundClosed)');
+  check(qa.roundId === qb.roundId && qa.roundId === hostQ.roundId, 'host and players receive the same round ID');
   const roundId = qa.roundId;
 
   check(has(await host.rejects('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab }), 'RoundInProgress'), 'second round while one is open -> RoundInProgress');
 
   const snap = await api(`/api/rooms/${code}`, { token: gmToken });
   check(snap.body.currentRound?.roundId === roundId && snap.body.currentRound.kind === Kind.Grab, 'RoomState carries the current round');
-  check(!JSON.stringify(snap.body).includes('correctOption'), 'RoomState never contains the correct answer');
+  check(snap.body.hostQuestion?.question.correctOption === 'B', 'authenticated host snapshot includes the full question');
 
   check(has(await anna.hub.rejects('SubmitAnswer', { roundId, option: 'Z' }), 'InvalidAnswer'), 'unknown option -> InvalidAnswer');
   check(has(await anna.hub.rejects('SubmitAnswer', { roundId, number: 5 }), 'InvalidAnswer'), 'number for a multiple-choice question -> InvalidAnswer');
   check(has(await anna.hub.rejects('SubmitAnswer', { roundId: '00000000-0000-0000-0000-000000000001', option: 'B' }), 'NoActiveRound'), 'answer for another round -> NoActiveRound');
 
-  await anna.hub.conn.invoke('SubmitAnswer', { roundId, option: 'B' });
+  const accepted = await anna.hub.conn.invoke('SubmitAnswer', { roundId, option: 'B' });
+  check(accepted?.roundId === roundId, 'answer acknowledgment identifies the recorded round');
+  await anna.hub.conn.stop();
+  anna.hub.events.length = 0;
+  await anna.hub.conn.start();
+  const acceptedState = (await anna.hub.waitFor('RoomState')).payload;
+  check(acceptedState.playerQuestion?.roundId === roundId && acceptedState.hasAnswered, 'accepted answer remains locked after reconnect');
+  check(acceptedState.hostQuestion == null && !JSON.stringify(acceptedState).includes('correctOption'), 'player reconnect snapshot does not leak the answer');
+  bela.hub.events.length = 0;
+  await bela.hub.conn.invoke('Rejoin');
+  const unansweredState = (await bela.hub.waitFor('RoomState')).payload;
+  check(unansweredState.hasAnswered === false, 'another player does not inherit accepted answer status');
   await host.waitFor('AnswerCountChanged', (c) => c.answered === 1 && c.total === 3);
   check(true, 'host sees answer count 1/3 (no answer content)');
   check(has(await anna.hub.rejects('SubmitAnswer', { roundId, option: 'A' }), 'AlreadyAnswered'), 'second answer -> AlreadyAnswered (first is final)');
@@ -164,6 +175,11 @@ try {
   check(closed.ranking[0].isCorrect === true && closed.ranking[2].isCorrect === false && closed.ranking[0].elapsedMs >= 0, 'isCorrect and elapsedMs are set');
   check(has(await anna.hub.rejects('SubmitAnswer', { roundId, option: 'B' }), 'NoActiveRound'), 'answer after the round closed -> NoActiveRound');
   check((await api(`/api/rooms/${code}`, { token: gmToken })).body.currentRound == null, 'round is cleared after closing');
+  anna.hub.events.length = 0;
+  await anna.hub.conn.invoke('Rejoin');
+  const closedState = (await anna.hub.waitFor('RoomState')).payload;
+  check(closedState.playerQuestion == null && closedState.lastRoundResult?.roundId === roundId,
+    'rejoin after closure restores the last result');
 
   // ---- Estimation round: host closes early; non-answerer ranks last ----
   host.events.length = 0;
@@ -189,19 +205,33 @@ try {
   await anna.hub.conn.stop();
   const anna2 = connectHub(anna.token);
   await anna2.conn.start();
-  const again = (await anna2.waitFor('QuestionStarted')).payload;
+  const restored = (await anna2.waitFor('RoomState')).payload;
+  const again = restored.playerQuestion;
+  check(restored.hasAnswered === false && restored.hostQuestion == null, 'unanswered reconnect is unlocked and has no host question');
   check(again.roundId === open.roundId && !('correctOption' in again), 'reconnecting player gets the open question again (no answer)');
   const hostAgain = connectHub(gmToken);
   await hostAgain.conn.start();
   await hostAgain.conn.invoke('HostAttach', code);
-  const hostRe = (await hostAgain.waitFor('QuestionStarted')).payload;
-  check(hostRe.id === hostOpen.id && hostRe.correctOption === 'B', 'reconnecting host gets the full open question again');
+  const hostRe = (await hostAgain.waitFor('RoomState')).payload.hostQuestion;
+  check(hostRe.roundId === hostOpen.roundId && hostRe.question.correctOption === 'B', 'reconnecting host gets the full open question again');
 
   const timed = (await host.waitFor('RoundClosed', (r) => r.roundId === open.roundId, 15000)).payload;
   const took = Date.now() - t0;
   check(took >= 10000 && took < 12500, `round closes by itself at the deadline (+grace): ${took} ms`);
   check(timed.winnerPlayerIds.length === 0 && timed.ranking.length === 3, 'nobody answered: no winner, everybody listed');
   check(timed.ranking.every((r) => r.isCorrect == null), 'unanswered players have isCorrect = null');
+
+  // Snapshot delivery must not overtake a concurrent close and reopen a closed question in the UI.
+  await host.conn.invoke('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab });
+  anna2.events.length = 0;
+  await Promise.all([anna2.conn.invoke('Rejoin'), host.conn.invoke('CloseRound')]);
+  await anna2.waitFor('RoomState');
+  await anna2.waitFor('RoundClosed');
+  const stateIndex = anna2.events.findIndex(e => e.name === 'RoomState');
+  const closeIndex = anna2.events.findIndex(e => e.name === 'RoundClosed');
+  const racedState = anna2.events[stateIndex].payload;
+  check(racedState.currentRound ? stateIndex < closeIndex : stateIndex > closeIndex,
+    'concurrent rejoin/close delivers a snapshot consistent with event order');
 
   // ---- Room close stops a running timer without errors ----
   await host.conn.invoke('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab });

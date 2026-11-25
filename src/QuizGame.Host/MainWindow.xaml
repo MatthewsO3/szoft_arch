@@ -51,10 +51,11 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                        <WrapPanel Grid.Row="0">
+                            <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
                             <Button Content="Create room" Command="{Binding CreateRoomCommand}" Padding="14,8" Margin="0,0,8,0" />
                             <Button Content="Close room" Command="{Binding CloseRoomCommand}" Padding="14,8" />
-                        </StackPanel>
+                        </WrapPanel>
 
                         <StackPanel Grid.Row="1" Margin="0,24,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
                             <TextBlock Text="Room code" Foreground="Gray" HorizontalAlignment="Center" />
@@ -102,7 +103,15 @@
                 </TabItem>
 
                 <TabItem Header="Question bank">
-                    <views:QuestionBankView DataContext="{Binding QuestionBank}" Margin="12" />
+                    <DockPanel>
+                        <WrapPanel DockPanel.Dock="Top" Margin="12">
+                            <Button Content="Send selected question" Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0" />
+                            <Button Content="Close round" Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0" />
+                            <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding AnswerProgress}" VerticalAlignment="Center" />
+                        </WrapPanel>
+                        <views:QuestionBankView DataContext="{Binding QuestionBank}" Margin="12" />
+                    </DockPanel>
                 </TabItem>
             </TabControl>
         </DockPanel>
