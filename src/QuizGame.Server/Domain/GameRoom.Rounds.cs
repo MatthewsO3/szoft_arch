@@ -11,6 +11,8 @@ public enum StartRoundError
     NoPlayers,
     /// <summary>The round kind is not allowed in the current phase (BaseOrder: BaseSelection, Grab/Battle: Conquest).</summary>
     InvalidPhase,
+    /// <summary>A territory pick (base or grab) is still waiting; it must finish before a new round opens.</summary>
+    PickInProgress,
 }
 
 public enum SubmitStatus
@@ -77,10 +79,35 @@ public sealed record RoundRecord(
     Guid? WinnerPlayerId,
     IReadOnlyList<AnswerRecord> Answers);
 
-public sealed record ClosedRound(RoundClosedDto Result, RoundRecord Record);
+/// <summary>
+/// A closed round plus any resulting map/pick follow-up (plan §4.2 Conquest):
+/// <see cref="BattleChange"/> is the ownership transfer of a battle, <see cref="GrabPick"/> is the first grab
+/// winner that now has to pick a free adjacent territory. Both are null for a BaseOrder round.
+/// </summary>
+public sealed record ClosedRound(RoundClosedDto Result, RoundRecord Record, MapChange? BattleChange = null, PickView? GrabPick = null);
 
 /// <summary>Progress of the round in progress, for resending it to a reconnecting client.</summary>
 public sealed record OpenRoundView(RoundInfo Round, int Answered, int Total);
+
+/// <summary>A battle an attacker has nominated and the host has not yet confirmed (plan §4.2, D3).</summary>
+public sealed record BattleNomination(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
+
+public enum NominateError
+{
+    None,
+    InvalidPhase,
+    RoundInProgress,
+    NoMap,
+    NoSuchTerritory,
+    TerritoryFree,
+    OwnTerritory,
+    NotAdjacent,
+}
+
+public readonly record struct NominateResult(NominateError Error, BattleNomination? Nomination = null)
+{
+    public bool Ok => Error == NominateError.None;
+}
 
 public sealed partial class GameRoom
 {
@@ -113,6 +140,7 @@ public sealed partial class GameRoom
     private ActiveRound? _round;
     private int _roundSeq;
     private RoundClosedDto? _lastRoundResult;
+    private BattleNomination? _nomination;
 
     public bool HasOpenRound
     {
@@ -136,6 +164,10 @@ public sealed partial class GameRoom
                     ? _phase != GamePhase.BaseSelection || _baseOrderEstablished
                     : _phase != GamePhase.Conquest)
                 return Fail(StartRoundError.InvalidPhase, $"A {request.Kind} round cannot be opened in the {_phase} phase.");
+
+            // A territory pick (base or grab) must finish before a new round opens.
+            if (_pick is not null || _pickQueue.Count > 0)
+                return Fail(StartRoundError.PickInProgress, "A territory pick is still in progress.");
 
             var malformed = ValidateQuestion(question);
             if (malformed is not null)
@@ -253,11 +285,65 @@ public sealed partial class GameRoom
         round.Participants.All(p =>
             round.HasAnswered(p.Id) || !(_players.FirstOrDefault(x => x.Id == p.Id)?.IsConnected ?? false));
 
+    /// <summary>
+    /// Hands the contested territory to the battle winner (plan §4.2). Only the owner changes; a captured base stays a
+    /// base (keeps its value) under its new owner. If the defender won, nothing changes and there are no changed cells.
+    /// </summary>
+    private MapChange? ApplyBattleOutcomeCore(Guid winnerId, int targetIndex, DateTimeOffset now)
+    {
+        if (_map?.Get(targetIndex) is not { } territory) return null;
+        if (territory.OwnerId == winnerId) return null; // defender kept it
+
+        territory.OwnerId = winnerId;
+        _lastActivity = now;
+        return new MapChange([territory.ToDto()], ScoreboardCore(), null, false);
+    }
+
     /// <summary>The round in progress with its answer progress, or null (for resending it after a reconnect).</summary>
     public OpenRoundView? GetOpenRound()
     {
         lock (_gate)
             return _round is { } r ? new OpenRoundView(r.Info, r.AnswerCount, r.Participants.Count) : null;
+    }
+
+    /// <summary>
+    /// An attacker nominates a territory to battle for (plan §4.2 Conquest, D3). Conquest only, no round open.
+    /// The target must be owned by another player and adjacent to a territory the attacker owns. The host still
+    /// has to confirm it with <see cref="TakeNomination"/>; a new nomination overwrites the previous one.
+    /// </summary>
+    public NominateResult TryNominateTarget(Guid attackerId, int targetIndex)
+    {
+        lock (_gate)
+        {
+            if (_phase != GamePhase.Conquest) return new NominateResult(NominateError.InvalidPhase);
+            if (_round is not null) return new NominateResult(NominateError.RoundInProgress);
+            if (_map is not { } map) return new NominateResult(NominateError.NoMap);
+            if (map.Get(targetIndex) is not { } target) return new NominateResult(NominateError.NoSuchTerritory);
+            if (target.OwnerId is not { } defenderId) return new NominateResult(NominateError.TerritoryFree);
+            if (defenderId == attackerId) return new NominateResult(NominateError.OwnTerritory);
+            if (!target.Neighbours.Any(n => map.Territories[n].OwnerId == attackerId))
+                return new NominateResult(NominateError.NotAdjacent);
+
+            _nomination = new BattleNomination(attackerId, defenderId, targetIndex);
+            return new NominateResult(NominateError.None, _nomination);
+        }
+    }
+
+    /// <summary>The current, still-valid battle nomination, or null.</summary>
+    public BattleNomination? CurrentNomination()
+    {
+        lock (_gate) return _nomination;
+    }
+
+    /// <summary>Consumes the pending nomination so the host can open the battle. Null if there is none.</summary>
+    public BattleNomination? TakeNomination()
+    {
+        lock (_gate)
+        {
+            var nomination = _nomination;
+            _nomination = null;
+            return nomination;
+        }
     }
 
     /// <summary>
@@ -305,11 +391,28 @@ public sealed partial class GameRoom
             _lastRoundResult = dto;
             _lastActivity = now;
 
-            // The base-selection round fixes the pick order; the first picker is up right away (plan §4.2).
-            if (info.Kind == RoundKind.BaseOrder)
-                BeginBasePickingCore(outcome.Winners, now);
+            MapChange? battleChange = null;
+            PickView? grabPick = null;
+            switch (info.Kind)
+            {
+                // The base-selection round fixes the pick order; the first picker is up right away (plan §4.2).
+                case RoundKind.BaseOrder:
+                    BeginBasePickingCore(outcome.Winners, now);
+                    break;
 
-            return new ClosedRound(dto, record);
+                // A grab's winners pick a free adjacent territory, fastest first (plan §4.2 Conquest).
+                case RoundKind.Grab:
+                    BeginGrabPickingCore(outcome.Winners, now);
+                    grabPick = PickViewCore();
+                    break;
+
+                // A battle hands the target territory straight to the winner (no pick); a tie keeps the defender.
+                case RoundKind.Battle when outcome.Winners.Count > 0 && info.TargetTerritoryIndex is { } targetIndex:
+                    battleChange = ApplyBattleOutcomeCore(outcome.Winners[0], targetIndex, now);
+                    break;
+            }
+
+            return new ClosedRound(dto, record, battleChange, grabPick);
         }
     }
 }

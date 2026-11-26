@@ -27,6 +27,7 @@ export const Events = Object.freeze({
   MapUpdated: 'MapUpdated',
   QuestionStarted: 'QuestionStarted',
   BattleAnnounced: 'BattleAnnounced',
+  BattleNominated: 'BattleNominated',
   AnswerCountChanged: 'AnswerCountChanged',
   RoundClosed: 'RoundClosed',
   PickRequested: 'PickRequested',
@@ -63,6 +64,8 @@ export const ErrorCodes = Object.freeze({
   BaseSelectionIncomplete: 'BaseSelectionIncomplete',
   NotYourPick: 'NotYourPick',
   InvalidPick: 'InvalidPick',
+  InvalidTarget: 'InvalidTarget',
+  NoNomination: 'NoNomination',
 });
 
 // RoundKind / QuestionType are serialized as numbers (QuizGame.Contracts.RoundKind / QuestionType).

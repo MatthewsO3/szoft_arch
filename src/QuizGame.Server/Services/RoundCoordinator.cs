@@ -43,6 +43,44 @@ public sealed class RoundCoordinator(
     public Task<string?> StartAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct = default) =>
         SerializedAsync(room, () => StartCoreAsync(room, request, ct));
 
+    /// <summary>An attacker nominates a battle target; the host is told and later confirms it (plan §4.2, D3).</summary>
+    public Task<string?> NominateTargetAsync(GameRoom room, Guid attackerId, int targetIndex) =>
+        SerializedAsync(room, async () =>
+        {
+            var result = room.TryNominateTarget(attackerId, targetIndex);
+            if (!result.Ok)
+            {
+                return result.Error switch
+                {
+                    NominateError.InvalidPhase => ErrorCodes.InvalidPhase,
+                    NominateError.RoundInProgress => ErrorCodes.RoundInProgress,
+                    _ => ErrorCodes.InvalidTarget,
+                };
+            }
+
+            var n = result.Nomination!;
+            await hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
+                HubNames.Events.BattleNominated, new BattleNominationDto(n.AttackerId, n.DefenderId, n.TargetTerritoryIndex));
+            return null;
+        });
+
+    /// <summary>Host confirms a pending nomination and opens the battle with the chosen estimation question (D3).</summary>
+    public Task<string?> ConfirmBattleAsync(GameRoom room, Guid questionId, CancellationToken ct = default) =>
+        SerializedAsync(room, async () =>
+        {
+            if (room.TakeNomination() is not { } nomination)
+                return ErrorCodes.NoNomination;
+
+            var request = new SendQuestionRequest
+            {
+                QuestionId = questionId,
+                Kind = RoundKind.Battle,
+                AttackerId = nomination.AttackerId,
+                TargetTerritoryIndex = nomination.TargetTerritoryIndex,
+            };
+            return await StartCoreAsync(room, request, ct);
+        });
+
     private async Task<string?> StartCoreAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct)
     {
         var question = await questions.GetActiveAsync(request.QuestionId, ct);
@@ -55,6 +93,7 @@ public sealed class RoundCoordinator(
             return started.Error switch
             {
                 StartRoundError.RoundActive => ErrorCodes.RoundInProgress,
+                StartRoundError.PickInProgress => ErrorCodes.RoundInProgress,
                 StartRoundError.NoPlayers => ErrorCodes.NotEnoughPlayers,
                 StartRoundError.InvalidPhase => ErrorCodes.InvalidPhase,
                 _ => ErrorCodes.InvalidRound,
