@@ -146,9 +146,7 @@ public sealed class RoundCoordinator(
                 };
             }
 
-            var n = result.Nomination!;
-            await hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
-                HubNames.Events.DuelNominated, new DuelNominationDto(n.AttackerId, n.DefenderId, n.TargetTerritoryIndex));
+            await phases.PublishDuelNominationCoreAsync(room, result.Nomination!);
             return null;
         });
 
