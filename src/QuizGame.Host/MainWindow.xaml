@@ -7,6 +7,35 @@
         Width="1040" Height="740" MinWidth="820" MinHeight="580"
         WindowStartupLocation="CenterScreen">
 
+    <Window.Resources>
+        <Storyboard x:Key="PopInAnimation">
+            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
+                             From="1" To="1.12" Duration="0:0:0.08" AutoReverse="True" />
+            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
+                             From="1" To="1.12" Duration="0:0:0.08" AutoReverse="True" />
+        </Storyboard>
+
+        <Style x:Key="AttentionBannerStyle" TargetType="Border">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="1" ScaleY="1" />
+                </Setter.Value>
+            </Setter>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowQuestionSelectionBanner}" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                    <Setter Property="IsHitTestVisible" Value="True" />
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard Storyboard="{StaticResource PopInAnimation}" />
+                    </DataTrigger.EnterActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
     <DockPanel Margin="24,16,24,16">
         <!-- Account and connection header -->
         <Grid DockPanel.Dock="Top" Margin="0,0,0,16">
@@ -157,7 +186,23 @@
                                     <TextBlock Text="Room code" Foreground="Gray" HorizontalAlignment="Center" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <TextBlock Text="{Binding RoomCode}" FontSize="64" FontWeight="Bold" FontFamily="Consolas"
-                                                   VerticalAlignment="Center" />
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.RenderTransform>
+                                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                                            </TextBlock.RenderTransform>
+                                            <TextBlock.RenderTransformOrigin>0.5,0.5</TextBlock.RenderTransformOrigin>
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasRoom}" Value="True">
+                                                            <DataTrigger.EnterActions>
+                                                                <BeginStoryboard Storyboard="{StaticResource PopInAnimation}" />
+                                                            </DataTrigger.EnterActions>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                         <Button Command="{Binding CopyRoomCodeCommand}"
                                                 Width="32" Height="32"
                                                 Padding="7"
@@ -193,6 +238,21 @@
                                         <TextBlock Text="{Binding PlayerCountText}" FontWeight="SemiBold" />
                                     </GroupBox.Header>
                                     <ListBox ItemsSource="{Binding Players}" HorizontalContentAlignment="Stretch">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+                                                <Setter Property="RenderTransform">
+                                                    <Setter.Value>
+                                                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                                        <BeginStoryboard Storyboard="{StaticResource PopInAnimation}" />
+                                                    </EventTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <DockPanel Margin="2">
@@ -237,6 +297,28 @@
                 <TabItem Header="Question bank">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" Margin="12">
+                            <Border DockPanel.Dock="Right"
+                                    Background="#FEF3C7"
+                                    BorderBrush="#F59E0B"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="12,7"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource AttentionBannerStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <icons:PackIconLucide Kind="Hourglass"
+                                                           Width="16"
+                                                           Height="16"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="#92400E"
+                                                           Margin="0,0,7,0" />
+                                    <TextBlock Text="Your turn to send a question"
+                                               Foreground="#92400E"
+                                               FontWeight="SemiBold"
+                                               FontSize="14" />
+                                </StackPanel>
+                            </Border>
                             <WrapPanel>
                                 <Button  Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
