@@ -170,6 +170,9 @@ public sealed partial class GameRoom
                 Map = _map?.ToDto(),
                 CurrentRound = _round?.ToCurrentDto(),
                 CurrentPick = CurrentPickDtoFor(playerId),
+                CurrentDuelNomination = forHost && _nomination is { } nomination
+                    ? new DuelNominationDto(nomination.AttackerId, nomination.DefenderId, nomination.TargetTerritoryIndex)
+                    : null,
                 PlayerQuestion = playerId is { } id && _round?.Info.ParticipantIds.Contains(id) == true ? _round.Info.ForPlayer() : null,
                 HostQuestion = forHost && _round is { } r ? r.Info.ForHost() : null,
                 HasAnswered = playerId is { } player && _round?.HasAnswered(player) == true,

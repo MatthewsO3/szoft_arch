@@ -171,6 +171,12 @@ public sealed class MapViewModel : ViewModelBase
         RaiseHeader();
     }
 
+    public void ClearPicker()
+    {
+        SetPicker(null);
+        RaiseHeader();
+    }
+
     public void ApplyGameFinished(GameFinishedDto finished)
     {
         _finished = true;

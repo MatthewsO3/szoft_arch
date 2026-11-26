@@ -304,6 +304,53 @@ public class GameRoomRoundTests
     }
 
     [Fact]
+    public void Duel_starts_with_a_target_pick_and_the_player_can_nominate()
+    {
+        var (room, _, _, _) = DuelRoom();
+
+        var pick = room.StartDuelTargetPick(Make.T0)!;
+
+        Assert.NotNull(pick);
+        Assert.Equal(PickPurpose.DuelTarget, pick.Purpose);
+        Assert.Equal(room.ActivePlayer(), pick.Picker.Id);
+        Assert.NotEmpty(pick.ValidTerritoryIndices);
+
+        var nominated = room.TryNominateTarget(pick.Picker.Id, pick.ValidTerritoryIndices[0]);
+
+        Assert.True(nominated.Ok);
+        Assert.Null(room.CurrentPickView());
+        Assert.Equal(pick.Picker.Id, nominated.Nomination!.AttackerId);
+        Assert.Equal(pick.ValidTerritoryIndices[0], nominated.Nomination.TargetTerritoryIndex);
+    }
+
+    [Fact]
+    public void Duel_target_pick_timeout_creates_a_nomination()
+    {
+        var (room, _, _, _) = DuelRoom();
+        var pick = room.StartDuelTargetPick(Make.T0)!;
+
+        var result = room.TryAutoPick(pick.Seq, pick.Deadline);
+
+        Assert.True(result.Ok);
+        Assert.NotNull(result.Nomination);
+        Assert.Equal(pick.Picker.Id, result.Nomination!.AttackerId);
+        Assert.Contains(result.Nomination.TargetTerritoryIndex, pick.ValidTerritoryIndices);
+        Assert.Null(room.CurrentPickView());
+    }
+
+    [Fact]
+    public void Host_can_end_Duel_while_target_selection_is_pending()
+    {
+        var (room, _, _, _) = DuelRoom();
+        Assert.NotNull(room.StartDuelTargetPick(Make.T0));
+
+        var result = room.TryAdvancePhase(GamePhase.Results, Make.T0.AddSeconds(1));
+
+        Assert.True(result.Ok);
+        Assert.Null(room.CurrentPickView());
+    }
+
+    [Fact]
     public void Duel_attacker_right_takes_a_normal_tile()
     {
         var (room, _, _, _) = DuelRoom();

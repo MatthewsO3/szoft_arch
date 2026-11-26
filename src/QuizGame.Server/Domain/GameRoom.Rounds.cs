@@ -223,6 +223,9 @@ public sealed partial class GameRoom
         {
             if (_phase != GamePhase.Duel) return new NominateResult(NominateError.InvalidPhase);
             if (_round is not null) return new NominateResult(NominateError.RoundInProgress);
+            if (_pick is { Purpose: PickPurpose.DuelTarget } pick
+                && (pick.PlayerId != attackerId || !pick.Valid.Contains(targetIndex)))
+                return new NominateResult(NominateError.NotYourTurn);
             if (ActivePlayerCore() != attackerId) return new NominateResult(NominateError.NotYourTurn);
             if (_map is not { } map) return new NominateResult(NominateError.NoMap);
             if (map.Get(targetIndex) is not { } target) return new NominateResult(NominateError.NoSuchTerritory);
@@ -232,6 +235,7 @@ public sealed partial class GameRoom
                 return new NominateResult(NominateError.NotAdjacent);
 
             _nomination = new DuelNomination(attackerId, defenderId, targetIndex);
+            if (_pick is { Purpose: PickPurpose.DuelTarget }) _pick = null;
             return new NominateResult(NominateError.None, _nomination);
         }
     }
