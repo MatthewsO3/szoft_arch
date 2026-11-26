@@ -57,6 +57,110 @@ public class GameRoomRoundTests
     // ---- Conquest ----
 
     [Fact]
+    public void Automatic_progression_waits_for_last_base_pick_including_timeout()
+    {
+        var (room, _, _, _) = Room(GamePhase.BaseSelection);
+        while (room.CurrentPickView() is { } pick)
+        {
+            Assert.Null(room.NextAutomaticPhase());
+            Assert.True(room.TryAutoPick(pick.Seq, pick.Deadline).Ok);
+        }
+        Assert.Equal(GamePhase.Conquest, room.NextAutomaticPhase());
+    }
+
+    [Fact]
+    public void Automatic_progression_waits_for_conquest_claims_and_final_round_resolution()
+    {
+        var (room, _, _, _) = Room(settings: new RoomSettings { ConquestRounds = 1 });
+        Assert.Null(room.NextAutomaticPhase());
+        room.StartConquestClaims(Make.T0);
+        while (room.CurrentPickView() is { } pick)
+        {
+            Assert.Null(room.NextAutomaticPhase());
+            room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0);
+        }
+        Assert.Null(room.NextAutomaticPhase());
+        var round = room.TryStartConquestRound(Mc(), Make.T0).Round!;
+        Assert.Null(room.NextAutomaticPhase());
+        room.CloseRound(round.RoundId, Make.T0.AddSeconds(10));
+        Assert.Equal(GamePhase.Expansion, room.NextAutomaticPhase());
+    }
+
+    [Fact]
+    public void Automatic_progression_waits_for_final_expansion_pick()
+    {
+        var (room, _, _, _) = Room(GamePhase.Expansion);
+        while (room.GetMap()!.Territories.Any(t => t.OwnerPlayerId is null))
+        {
+            var round = room.TryStartExpansionRound(Est(), Make.T0).Round!;
+            room.TrySubmitAnswer(round.ParticipantIds[0], Num(round, 100m), Make.T0, Grace);
+            var pick = room.CloseRound(round.RoundId, Make.T0)!.ExpansionPick!;
+            Assert.Null(room.NextAutomaticPhase());
+            room.TryAutoPick(pick.Seq, pick.Deadline);
+        }
+        Assert.Equal(GamePhase.Duel, room.NextAutomaticPhase());
+    }
+
+    [Fact]
+    public void Full_map_ends_conquest_early_and_passes_through_expansion()
+    {
+        var (room, _, _, _) = Room(settings: new RoomSettings { ConquestRounds = 100 });
+        for (var i = 0; i < 100 && room.NextAutomaticPhase() is null; i++)
+        {
+            room.StartConquestClaims(Make.T0);
+            while (room.CurrentPickView() is { } pick)
+                room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0);
+            var round = room.TryStartConquestRound(Mc(), Make.T0).Round!;
+            foreach (var id in round.ParticipantIds)
+                room.TrySubmitAnswer(id, Opt(round, 'B'), Make.T0, Grace);
+            room.CloseRound(round.RoundId, Make.T0);
+        }
+        Assert.False(room.PhaseRoundsExhausted);
+        Assert.Equal(GamePhase.Expansion, room.NextAutomaticPhase());
+        Assert.True(room.TryAdvancePhase(GamePhase.Expansion, Make.T0).Ok);
+        Assert.Equal(GamePhase.Duel, room.NextAutomaticPhase());
+        Assert.True(room.TryAdvancePhase(GamePhase.Duel, Make.T0).Ok);
+        Assert.Null(room.NextAutomaticPhase());
+    }
+
+    [Fact]
+    public void Automatic_progression_finishes_duel_at_round_limit()
+    {
+        var (room, _, _, _) = DuelRoom(new RoomSettings { DuelRounds = 1 });
+        var (attacker, _, target) = FindDuelViaDto(room);
+        room.TryNominateTarget(attacker, target);
+        var round = room.TryStartDuelRound(Mc(), Make.T0).Round!;
+        Assert.Null(room.NextAutomaticPhase());
+        room.CloseRound(round.RoundId, Make.T0.AddSeconds(10));
+        Assert.Equal(GamePhase.Results, room.NextAutomaticPhase());
+    }
+
+    [Fact]
+    public void Automatic_progression_finishes_when_only_one_base_holder_remains()
+    {
+        var (room, _, _, _) = DuelRoom();
+        foreach (var id in room.TurnOrder.Skip(1).ToList())
+        {
+            room.HandlePlayerRemoved(id, Make.T0);
+        }
+        Assert.True(room.OneBaseHolderRemains());
+        Assert.Equal(GamePhase.Results, room.NextAutomaticPhase());
+    }
+
+    [Fact]
+    public void Manual_advance_can_end_conquest_and_duel_early_but_not_skip_unfinished_picks()
+    {
+        var (room, _, _, _) = Room();
+        Assert.Null(room.NextAutomaticPhase());
+        Assert.True(room.TryAdvancePhase(GamePhase.Expansion, Make.T0).Ok);
+        Assert.Equal(PhaseError.PhaseNotComplete, room.TryAdvancePhase(GamePhase.Duel, Make.T0).Error);
+        FillMap(room);
+        Assert.True(room.TryAdvancePhase(GamePhase.Duel, Make.T0).Ok);
+        Assert.Null(room.NextAutomaticPhase());
+        Assert.True(room.TryAdvancePhase(GamePhase.Results, Make.T0).Ok);
+    }
+
+    [Fact]
     public void Conquest_claim_stage_asks_each_player_in_turn_order()
     {
         var (room, _, _, _) = Room();

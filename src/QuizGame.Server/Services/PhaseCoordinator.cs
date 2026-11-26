@@ -34,7 +34,14 @@ public sealed class PhaseCoordinator(
         gate.RunAsync(room, () => StartGameCoreAsync(room));
 
     public Task<string?> AdvancePhaseAsync(GameRoom room, GamePhase target) =>
-        gate.RunAsync(room, () => AdvancePhaseCoreAsync(room, target));
+        gate.RunAsync(room, async () =>
+        {
+            // An automatic transition may have won the race with the host's button click.
+            if (room.Phase == target) return null;
+            var error = await AdvancePhaseCoreAsync(room, target);
+            if (error is null) await AdvanceCompletedPhasesCoreAsync(room);
+            return error;
+        });
 
     /// <summary>The current picker chooses a territory (base, conquest claim or expansion).</summary>
     public Task<string?> PickAsync(GameRoom room, Guid playerId, int territoryIndex) =>
@@ -61,6 +68,7 @@ public sealed class PhaseCoordinator(
         {
             var change = room.HandlePlayerRemoved(playerId, time.GetUtcNow());
             if (change is not null) await AfterMapChangeCoreAsync(room, change);
+            await AdvanceCompletedPhasesCoreAsync(room);
             return true;
         });
 
@@ -91,6 +99,16 @@ public sealed class PhaseCoordinator(
 
         if (closed.ExpansionPick is { } pick)
             await PublishPickAsync(room, pick);
+        await AdvanceCompletedPhasesCoreAsync(room);
+    }
+
+    // Caller holds the room command gate. Reuse normal transitions so events and persistence stay ordered.
+    public async Task AdvanceCompletedPhasesCoreAsync(GameRoom room)
+    {
+        while (room.NextAutomaticPhase() is { } next)
+        {
+            if (await AdvancePhaseCoreAsync(room, next) is not null) break;
+        }
     }
 
     public async Task SendPickStateCoreAsync(GameRoom room, IClientProxy caller, Guid? playerId)
@@ -151,6 +169,7 @@ public sealed class PhaseCoordinator(
 
         // Conquest claim stage finished: let the round coordinator open the question.
         if (result.AllClaimsIn && OnClaimsReady is { } ready) await ready(room);
+        await AdvanceCompletedPhasesCoreAsync(room);
     }
 
     private async Task AfterMapChangeCoreAsync(GameRoom room, MapChange change)

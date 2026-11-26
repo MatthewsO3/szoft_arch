@@ -5,8 +5,7 @@ using QuizGame.Host.Services;
 namespace QuizGame.Host.ViewModels;
 
 /// <summary>
-/// View model for host phase progression (Lobby → BaseSelection → Conquest → Results),
-/// transition gating, and Decision D4 Conquest end suggestions (plan §4.2, §9.2, §16).
+/// Host controls for automatic phase progression and valid manual transitions.
 /// </summary>
 public sealed class PhaseControlViewModel : ViewModelBase
 {
@@ -40,8 +39,8 @@ public sealed class PhaseControlViewModel : ViewModelBase
             ex => _onError?.Invoke(HostErrorFormatter.Format(ex)));
 
         NextPhaseCommand = new AsyncRelayCommand(
-            _ => AdvanceToConquestAsync(),
-            _ => CanAdvanceToConquest,
+            _ => AdvancePhaseAsync(),
+            _ => CanAdvancePhase,
             ex => _onError?.Invoke(HostErrorFormatter.Format(ex)));
 
         EndGameCommand = new AsyncRelayCommand(
@@ -152,23 +151,33 @@ public sealed class PhaseControlViewModel : ViewModelBase
     public bool IsLobby => Phase == GamePhase.Lobby;
     public bool IsBaseSelection => Phase == GamePhase.BaseSelection;
     public bool IsConquest => Phase == GamePhase.Conquest;
+    public bool IsExpansion => Phase == GamePhase.Expansion;
+    public bool IsDuel => Phase == GamePhase.Duel;
     public bool IsResults => Phase == GamePhase.Results;
 
     public bool IsLobbyCompleted => Phase > GamePhase.Lobby;
     public bool IsBaseSelectionCompleted => Phase > GamePhase.BaseSelection;
     public bool IsConquestCompleted => Phase > GamePhase.Conquest;
+    public bool IsExpansionCompleted => Phase > GamePhase.Expansion;
+    public bool IsDuelCompleted => Phase > GamePhase.Duel;
 
     public bool CanStartGame =>
         HasRoom && IsConnected && !IsBusy && !IsRoundOpen &&
         Phase == GamePhase.Lobby && ConnectedPlayerCount >= MinPlayers;
 
-    public bool CanAdvanceToConquest =>
-        HasRoom && IsConnected && !IsBusy && !IsRoundOpen &&
-        Phase == GamePhase.BaseSelection;
+    private bool CanTransition => HasRoom && IsConnected && !IsBusy && !IsRoundOpen
+        && string.IsNullOrEmpty(ActivePickerName);
+
+    public bool CanAdvancePhase => CanTransition && Phase switch
+    {
+        GamePhase.BaseSelection => TotalPlayerCount > 0 && OwnedTerritories >= TotalPlayerCount,
+        GamePhase.Conquest => true,
+        GamePhase.Expansion => AllTerritoriesOwned,
+        _ => false
+    };
 
     public bool CanEndGame =>
-        HasRoom && IsConnected && !IsBusy && !IsRoundOpen &&
-        Phase == GamePhase.Conquest;
+        CanTransition && Phase == GamePhase.Duel;
 
     public bool AllTerritoriesOwned =>
         TotalTerritories > 0 && OwnedTerritories >= TotalTerritories;
@@ -186,9 +195,9 @@ public sealed class PhaseControlViewModel : ViewModelBase
             if (Phase != GamePhase.Conquest)
                 return "";
             if (AllTerritoriesOwned)
-                return "All territories are owned — consider ending Conquest.";
+                return "All territories are owned — advancing automatically to Duel.";
             if (ReachedSuggestedMaxRounds)
-                return $"Reached {ConquestRoundsCompleted}/{SuggestedMaxRounds} suggested rounds — consider ending Conquest.";
+                return $"Completed {ConquestRoundsCompleted}/{SuggestedMaxRounds} rounds — advancing automatically to Expansion.";
             return "";
         }
     }
@@ -215,11 +224,15 @@ public sealed class PhaseControlViewModel : ViewModelBase
                     $"Ready to start ({ConnectedPlayerCount}/{TotalPlayerCount} connected, minimum {MinPlayers})."
                     + (HasUnsavedSettings ? " Apply or revert pending settings before starting." : ""),
                 GamePhase.BaseSelection =>
-                    "Base selection: send an estimation question in Question bank to assign bases, then click Next phase.",
+                    "Players pick their bases in turn. Conquest starts automatically after the last pick.",
                 GamePhase.Conquest when TotalTerritories > 0 =>
-                    $"Conquest: round {ConquestRoundsCompleted}/{SuggestedMaxRounds} completed, {OwnedTerritories}/{TotalTerritories} territories owned.",
+                    $"Conquest: {OwnedTerritories}/{TotalTerritories} territories owned. Advances automatically after {SuggestedMaxRounds} rounds or when the map is full. Next phase ends Conquest early.",
                 GamePhase.Conquest =>
-                    $"Conquest: round {ConquestRoundsCompleted}/{SuggestedMaxRounds} completed. Send questions or click End game when finished.",
+                    $"Conquest advances automatically after {SuggestedMaxRounds} rounds. Next phase ends Conquest early.",
+                GamePhase.Expansion =>
+                    "Send estimation questions until every territory is owned. Duel starts automatically after the final tile pick.",
+                GamePhase.Duel =>
+                    "The active player nominates a target, then send a multiple-choice question. Results appear automatically at the round limit or when one base holder remains. End game finishes Duel early.",
                 GamePhase.Results =>
                     "Game finished — final standings are shown.",
                 _ => ""
@@ -230,8 +243,8 @@ public sealed class PhaseControlViewModel : ViewModelBase
     public Task StartGameAsync() =>
         RunTransitionAsync(() => CanStartGame, () => _client.StartGameAsync());
 
-    public Task AdvanceToConquestAsync() =>
-        RunTransitionAsync(() => CanAdvanceToConquest, () => _client.AdvancePhaseAsync(GamePhase.Conquest));
+    public Task AdvancePhaseAsync() =>
+        RunTransitionAsync(() => CanAdvancePhase, () => _client.AdvancePhaseAsync((GamePhase)((int)Phase + 1)));
 
     public Task EndGameAsync() =>
         RunTransitionAsync(() => CanEndGame, () => _client.AdvancePhaseAsync(GamePhase.Results));
@@ -250,7 +263,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
         IsRoundOpen = false;
         IsBusy = false;
         MinPlayers = settings.MinPlayers;
-        SuggestedMaxRounds = settings.DuelRounds;
+        SuggestedMaxRounds = settings.ConquestRounds;
         ConquestRoundsCompleted = 0;
         ActivePickerName = "";
         HasUnsavedSettings = false;
@@ -267,10 +280,12 @@ public sealed class PhaseControlViewModel : ViewModelBase
         Phase = state.Phase;
         IsRoundOpen = state.CurrentRound is not null;
         MinPlayers = state.Settings.MinPlayers;
-        SuggestedMaxRounds = state.Settings.DuelRounds;
+        SuggestedMaxRounds = state.Settings.ConquestRounds;
         TotalPlayerCount = state.Players.Count;
         ConnectedPlayerCount = state.Players.Count(p => p.Connected);
-        ActivePickerName = "";
+        ActivePickerName = state.CurrentPick is { } pick
+            ? state.Players.FirstOrDefault(p => p.Id == pick.PickerPlayerId)?.Name ?? "A player"
+            : "";
 
         if (state.Phase != GamePhase.Conquest || enteringConquest)
             ConquestRoundsCompleted = 0;
@@ -293,7 +308,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(settings);
         MinPlayers = settings.MinPlayers;
-        SuggestedMaxRounds = settings.DuelRounds;
+        SuggestedMaxRounds = settings.ConquestRounds;
         NotifyAll();
     }
 
@@ -417,12 +432,16 @@ public sealed class PhaseControlViewModel : ViewModelBase
         Raise(nameof(IsLobby));
         Raise(nameof(IsBaseSelection));
         Raise(nameof(IsConquest));
+        Raise(nameof(IsExpansion));
+        Raise(nameof(IsDuel));
         Raise(nameof(IsResults));
         Raise(nameof(IsLobbyCompleted));
         Raise(nameof(IsBaseSelectionCompleted));
         Raise(nameof(IsConquestCompleted));
+        Raise(nameof(IsExpansionCompleted));
+        Raise(nameof(IsDuelCompleted));
         Raise(nameof(CanStartGame));
-        Raise(nameof(CanAdvanceToConquest));
+        Raise(nameof(CanAdvancePhase));
         Raise(nameof(CanEndGame));
         Raise(nameof(AllTerritoriesOwned));
         Raise(nameof(ReachedSuggestedMaxRounds));
