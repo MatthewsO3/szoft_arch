@@ -121,7 +121,7 @@ Phase rules in detail:
 - In that turn order, each player picks **one free territory as their base** (player UI: map picker). The server enforces: territory free, not yet taken, and (optional rule) not adjacent to another base. A pick timeout (default 20 s) auto-assigns a random valid territory so the game cannot stall.
 - A base is worth `BaseValue` (default 300) and has `BaseHealth` hit points (default 3).
 
-**Conquest (hódítás)** — runs `ConquestRounds` rounds (default 5), using the turn order:
+**Conquest (hódítás)** — runs up to `ConquestRounds` rounds (default 10), ending earlier if the map fills, using the turn order:
 - **Claim stage:** each player in turn order claims **one** free tile. A claimed tile must be adjacent to a tile the player already owns; if none is reachable, any free tile. Players with no free tile left are skipped. Two players cannot claim the same tile (picks are sequential).
 - **Question:** once every claim is in, the host opens **one multiple-choice** question for all claimers at once.
 - **Resolve:** every player who answered correctly keeps the tile they claimed (a normal tile, value `TerritoryValue`, 1 health); a wrong or missing answer releases the claim.
