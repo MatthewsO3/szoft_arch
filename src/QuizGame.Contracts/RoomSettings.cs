@@ -19,8 +19,8 @@ public sealed record RoomSettings
     /// <summary>Hit points of a base: it must be won in a Duel this many times before it is captured (plan §4.2 Duel).</summary>
     public int BaseHealth { get; init; } = 3;
 
-    /// <summary>Number of Conquest rounds before the phase ends (plan §4.2 Conquest).</summary>
-    public int ConquestRounds { get; init; } = 5;
+    /// <summary>Maximum Conquest rounds; a full map ends the phase earlier (plan §4.2 Conquest).</summary>
+    public int ConquestRounds { get; init; } = 10;
 
     /// <summary>Maximum number of Duel rounds before the phase ends (plan §4.2 Duel); the phase may also end when one player holds every base.</summary>
     public int DuelRounds { get; init; } = 10;
