@@ -66,10 +66,21 @@ public sealed class PhaseCoordinator(
 
     // ---- called by RoundCoordinator while it holds the gate ----
 
-    /// <summary>A round closed: after the base-order round the first player is asked for a base.</summary>
+    /// <summary>
+    /// A round closed. BaseOrder and Grab start a pick (the first player is asked); a battle transfers the
+    /// contested territory straight away. Both push the resulting <c>MapUpdated</c> / <c>PickRequested</c>.
+    /// </summary>
     public async Task OnRoundClosedCoreAsync(GameRoom room, ClosedRound closed)
     {
-        if (closed.Record.Kind != RoundKind.BaseOrder) return;
+        // A battle handed the target territory to the winner: tell everybody (no pick follows).
+        if (closed.BattleChange is { } change)
+        {
+            await recorder.TerritoriesChangedAsync(room.SessionId, ToRecords(change.Changed));
+            await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(
+                HubNames.Events.MapUpdated, new MapUpdate(change.Changed, change.Scoreboard));
+        }
+
+        // BaseOrder and Grab both start a pick; ask whoever is up now.
         if (room.CurrentPickView() is { } pick)
             await PublishPickAsync(room, pick);
     }

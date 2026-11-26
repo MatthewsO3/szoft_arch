@@ -68,10 +68,10 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `AdvancePhase` | GM | `GamePhase targetPhase` | Validated transition (no skip/back): BaseSelection → Conquest needs all bases picked, Conquest → Results ends the game (§6) |
 | `SendQuestion` | GM | `SendQuestionRequest` | Opens a round |
 | `CloseRound` | GM | – | Ends the current round early |
-| `ConfirmBattle` | GM | – | Confirms an attacker's nomination (D3) |
+| `ConfirmBattle` | GM | `ConfirmBattleRequest { questionId }` | Confirms a pending nomination and opens the battle with that estimation question (D3, §7) |
 | `SubmitAnswer` | Player | `SubmitAnswerRequest` | Returns `AnswerAccepted { roundId }` after recording an answer (first is final, D7) |
-| `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker; base selection (§6) |
-| `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target (D3) |
+| `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker; base selection and Conquest grabs (§6, §7) |
+| `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target; the host is told via `BattleNominated` (D3, §7) |
 | `Rejoin` | Player/GM | – | Re-attach after disconnect; server replies with `RoomState` |
 | `LeaveRoom` | Player | – | Player leaves voluntarily; room gets `PlayerLeft` |
 | `Ping` | any | – | Latency / keepalive / clock sync |
@@ -89,6 +89,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `QuestionStarted` | gm group | `QuestionForHost { roundId, question: QuestionDto, serverDeadlineUtc }` (includes correct answer) |
 | `QuestionStarted` | players group | `QuestionForPlayer` (no correct answer); battle → only the two players |
 | `BattleAnnounced` | non-participants | `BattleAnnouncement` |
+| `BattleNominated` | gm group | `BattleNominationDto { attackerId, defenderId, targetTerritoryIndex }` (awaiting the host's `ConfirmBattle`, D3) |
 | `AnswerCountChanged` | gm group | `AnswerCount` |
 | `RoundClosed` | room | `RoundClosedDto` (ranking + correct answer + winners) |
 | `PickRequested` | the picker | `PickRequest` |
@@ -129,11 +130,13 @@ Initial set; extend as needed and keep in sync with the client:
 | `InvalidSettings` | `RoomSettings` value out of range (REST 400) |
 | `NotAttached` | Hub method needs `HostAttach` / a joined room first |
 | `QuestionNotFound` | No active question with the given id (REST 404; `SendQuestion` over the hub) |
-| `RoundInProgress` | `SendQuestion` while another round is open |
+| `RoundInProgress` | `SendQuestion` while another round is open or a territory pick is still waiting; `AdvancePhase(Results)` while a grab pick is pending |
 | `NoActiveRound` | `CloseRound` / `SubmitAnswer` with no open round, or for a round that is not the open one |
 | `InvalidRound` | Kind does not fit the question type (Grab = multiple choice, BaseOrder/Battle = estimation), malformed question, or an invalid battle (no attacker/target, target has no owner, own territory) |
 | `InvalidAnswer` | Missing/unknown option (multiple choice) or missing number (estimation) |
 | `NotParticipant` | The player is not part of this round (battle: only attacker and defender) |
+| `InvalidTarget` | `NominateTarget` on a free, own, non-existent or non-adjacent territory |
+| `NoNomination` | `ConfirmBattle` with no pending nomination (it was never made, or the involved player left) |
 | `CategoryNotFound` | No category with the given id (REST 404) |
 | `CategoryNameTaken` | A category with that name already exists (REST 409) |
 | `CategoryInUse` | Category still has questions; cannot be deleted (REST 409) |
@@ -189,7 +192,7 @@ Initial set; extend as needed and keep in sync with the client:
   before closure; host snapshots are never broadcast to players.
 - **Host controls:** select a row in the question bank and use **Send selected question**. Multiple-choice
   questions open a Grab round; estimation questions open a BaseOrder round. **Close round** closes early.
-  Battle selection and phase gating remain later map/game work.
+  Conquest grabs, battles and phase gating are covered in §7.
 
 ---
 
@@ -229,3 +232,31 @@ Initial set; extend as needed and keep in sync with the client:
   Everything else is `InvalidTransition`. `PhaseChanged` goes to the whole room.
 - **Persistence:** the cells of the map are stored in `Territories` (all at the start, then the changed ones); history write
   failures are logged and never affect the game.
+
+---
+
+## 7. Conquest: grabs and battles (M4)
+
+- **Grab round:** in Conquest the host sends a **multiple-choice** question with kind `Grab`. On close, the
+  `WinnersPerRound` fastest correct players (plan §4.2, D2) become pickers, fastest first. Each winner gets
+  `PickRequested { ValidTerritoryIndices, PickDeadlineUtc }`; everybody else gets `PickWaiting(picker)`. The valid cells
+  are the **free territories adjacent to a territory the winner already owns**, or — if the winner owns none (e.g. their
+  base was lost) — **any free territory**. The pick uses the same `PickTerritory(index)` method and the same
+  `PickTimeoutSeconds` auto-assignment as base selection, but the assigned cell is a **normal** territory
+  (`IsBase = false`, `Value = TerritoryValue`), broadcast with `MapUpdated`. The next winner is asked after each pick.
+- **A pick blocks the next action:** while a grab pick is pending, `SendQuestion` returns `RoundInProgress` and
+  `AdvancePhase(Results)` returns `RoundInProgress`. Finish the pick (or let it time out) first.
+- **Battle nomination (D3):** in Conquest, with no round open, an attacker calls `NominateTarget(territoryIndex)`. The
+  target must be **owned by another player** and **adjacent to a territory the attacker owns**, else `InvalidTarget`
+  (`NominateTarget` outside Conquest → `InvalidPhase`; while a round is open → `RoundInProgress`). The host receives
+  `BattleNominated { attackerId, defenderId, targetTerritoryIndex }`. A new nomination overwrites the previous one; a
+  nomination is dropped if the attacker or defender leaves.
+- **Battle confirmation:** the host calls `ConfirmBattle { questionId }` with an **estimation** question. It consumes the
+  pending nomination (`NoNomination` if there is none) and opens a `Battle` round between attacker and defender only; the
+  two get `QuestionStarted`, everybody else `BattleAnnounced`. The host may also open a battle directly with
+  `SendQuestion` carrying `AttackerId` + `TargetTerritoryIndex`.
+- **Battle result:** closest guess wins (plan §4.5); a tie (or nobody closer than the defender) keeps the **defender**.
+  If the attacker wins, the contested territory's owner changes (a captured base keeps its base value) and the change is
+  broadcast with `MapUpdated`; if the defender keeps it, nothing on the map changes. Scores are derived from current
+  ownership (plan §4.3), so they update with every `MapUpdated`.
+

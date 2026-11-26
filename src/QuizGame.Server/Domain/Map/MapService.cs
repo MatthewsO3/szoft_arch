@@ -147,6 +147,23 @@ public static class MapService
             : new BasePicks(free.Select(t => t.Index).ToList(), free.Count > 0);
     }
 
+    /// <summary>
+    /// Free territories a Conquest grab winner may take (plan §4.2 Conquest): a free cell adjacent to a
+    /// territory the player already owns, or — if they own none (e.g. their base was lost) — any free cell.
+    /// </summary>
+    public static IReadOnlyList<int> ValidGrabPicks(GameMap map, Guid playerId)
+    {
+        var free = map.Territories.Where(t => t.IsFree).ToList();
+        var ownsSomething = map.OwnedBy(playerId).Any();
+        if (!ownsSomething)
+            return free.Select(t => t.Index).ToList();
+
+        return free
+            .Where(t => t.Neighbours.Any(n => map.Territories[n].OwnerId == playerId))
+            .Select(t => t.Index)
+            .ToList();
+    }
+
     /// <summary>Picks one of the valid territories at random for a player who ran out of time.</summary>
     public static int? AutoPick(IReadOnlyList<int> validIndices, Random random) =>
         validIndices.Count == 0 ? null : validIndices[random.Next(validIndices.Count)];

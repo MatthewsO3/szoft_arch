@@ -49,15 +49,23 @@ public readonly record struct PickResult(PickError Error, MapChange? Change = nu
     public bool Ok => Error == PickError.None;
 }
 
-/// <summary>Map, base selection and phase transitions of a room (plan §4.2, §4.4). Everything runs under the room lock.</summary>
+/// <summary>Whether a pending pick assigns a base (BaseSelection) or a conquered territory (Conquest grab).</summary>
+public enum PickKind
+{
+    Base,
+    Grab,
+}
+
+/// <summary>Map, base selection, Conquest grabs and phase transitions of a room (plan §4.2, §4.4). Everything runs under the room lock.</summary>
 public sealed partial class GameRoom
 {
     private sealed record PickState(
-        long Seq, Guid PlayerId, DateTimeOffset Deadline, IReadOnlyList<int> Valid, bool Relaxed);
+        long Seq, PickKind Kind, Guid PlayerId, DateTimeOffset Deadline, IReadOnlyList<int> Valid, bool Relaxed);
 
     private GameMap? _map;
     private bool _baseOrderEstablished;
     private readonly List<Guid> _pickQueue = [];
+    private PickKind _pickQueueKind = PickKind.Base;
     private PickState? _pick;
     private long _pickSeq;
 
@@ -136,6 +144,9 @@ public sealed partial class GameRoom
                 return new PhaseResult(PhaseError.InvalidTransition, _phase);
             if (_round is not null)
                 return new PhaseResult(PhaseError.RoundInProgress, _phase);
+            // A grab pick still waiting counts as a round in progress for Conquest → Results.
+            if (target == GamePhase.Results && (_pick is not null || _pickQueue.Count > 0))
+                return new PhaseResult(PhaseError.RoundInProgress, _phase);
             if (target == GamePhase.Conquest && !BasesCompleteCore)
                 return new PhaseResult(PhaseError.BaseSelectionIncomplete, _phase);
 
@@ -200,10 +211,22 @@ public sealed partial class GameRoom
         }
 
         _baseOrderEstablished = true;
+        _pickQueueKind = PickKind.Base;
         AdvancePickCore(now);
     }
 
-    /// <summary>Makes the next player in the queue the current picker (skipping players who left).</summary>
+    /// <summary>A Grab round is closed: its winners pick a free adjacent territory, in speed order (plan §4.2 Conquest).</summary>
+    private void BeginGrabPickingCore(IReadOnlyList<Guid> winners, DateTimeOffset now)
+    {
+        foreach (var id in winners)
+            if (_players.Any(p => p.Id == id))
+                _pickQueue.Add(id);
+
+        _pickQueueKind = PickKind.Grab;
+        AdvancePickCore(now);
+    }
+
+    /// <summary>Makes the next player in the queue the current picker (skipping players who left or have no valid cell).</summary>
     private void AdvancePickCore(DateTimeOffset now)
     {
         _pick = null;
@@ -215,26 +238,39 @@ public sealed partial class GameRoom
             _pickQueue.RemoveAt(0);
             if (_players.All(p => p.Id != id)) continue;
 
-            var valid = MapService.ValidBasePicks(_map, Settings.DisallowAdjacentBases);
-            if (valid.Indices.Count == 0) continue; // map is full: nothing left to pick
+            var (valid, relaxed) = ValidPicksFor(id);
+            if (valid.Count == 0) continue; // nothing left to pick for this player
 
             var seconds = Math.Max(1, Settings.PickTimeoutSeconds);
-            _pick = new PickState(++_pickSeq, id, now.AddSeconds(seconds), valid.Indices, valid.Relaxed);
+            _pick = new PickState(++_pickSeq, _pickQueueKind, id, now.AddSeconds(seconds), valid, relaxed);
             return;
         }
     }
 
-    /// <summary>The current picker chooses a base. The territory must be one of the valid ones.</summary>
+    /// <summary>Valid cells for the player whose turn it is, by pick kind.</summary>
+    private (IReadOnlyList<int> Indices, bool Relaxed) ValidPicksFor(Guid playerId)
+    {
+        if (_map is null) return ([], false);
+        if (_pickQueueKind == PickKind.Base)
+        {
+            var picks = MapService.ValidBasePicks(_map, Settings.DisallowAdjacentBases);
+            return (picks.Indices, picks.Relaxed);
+        }
+
+        return (MapService.ValidGrabPicks(_map, playerId), false);
+    }
+
+    /// <summary>The current picker chooses a territory (a base in BaseSelection, a grabbed cell in Conquest).</summary>
     public PickResult TryPick(Guid playerId, int territoryIndex, DateTimeOffset now)
     {
         lock (_gate)
         {
-            if (_phase != GamePhase.BaseSelection) return new PickResult(PickError.InvalidPhase);
+            if (_phase is not (GamePhase.BaseSelection or GamePhase.Conquest)) return new PickResult(PickError.InvalidPhase);
             if (_pick is not { } pick) return new PickResult(PickError.NoActivePick);
             if (pick.PlayerId != playerId) return new PickResult(PickError.NotYourPick);
             if (!pick.Valid.Contains(territoryIndex)) return new PickResult(PickError.InvalidPick);
 
-            return new PickResult(PickError.None, AssignBaseCore(pick, territoryIndex, now));
+            return new PickResult(PickError.None, AssignPickCore(pick, territoryIndex, now));
         }
     }
 
@@ -243,21 +279,30 @@ public sealed partial class GameRoom
     {
         lock (_gate)
         {
-            if (_phase != GamePhase.BaseSelection || _pick is not { } pick || pick.Seq != pickSeq)
+            if (_phase is not (GamePhase.BaseSelection or GamePhase.Conquest) || _pick is not { } pick || pick.Seq != pickSeq)
                 return new PickResult(PickError.NoActivePick);
 
             var index = MapService.AutoPick(pick.Valid, PickRandom);
             if (index is null) return new PickResult(PickError.NoActivePick);
-            return new PickResult(PickError.None, AssignBaseCore(pick, index.Value, now));
+            return new PickResult(PickError.None, AssignPickCore(pick, index.Value, now));
         }
     }
 
-    private MapChange AssignBaseCore(PickState pick, int index, DateTimeOffset now)
+    private MapChange AssignPickCore(PickState pick, int index, DateTimeOffset now)
     {
         var territory = _map!.Get(index)!;
         territory.OwnerId = pick.PlayerId;
-        territory.IsBase = true;
-        territory.Value = Settings.BaseValue;
+        if (pick.Kind == PickKind.Base)
+        {
+            territory.IsBase = true;
+            territory.Value = Settings.BaseValue;
+        }
+        else
+        {
+            territory.IsBase = false;
+            territory.Value = Settings.TerritoryValue;
+        }
+
         _lastActivity = now;
 
         AdvancePickCore(now);
@@ -285,16 +330,21 @@ public sealed partial class GameRoom
             }
 
             _pickQueue.RemoveAll(id => id == playerId);
+
+            // A pending battle nomination that involves the leaver is no longer valid.
+            if (_nomination is { } nomination && (nomination.AttackerId == playerId || nomination.DefenderId == playerId))
+                _nomination = null;
+
             var pickerLeft = _pick?.PlayerId == playerId;
             if (pickerLeft)
             {
                 AdvancePickCore(now);
             }
-            else if (freed.Count > 0 && _pick is { } pending && _map is { } current)
+            else if (freed.Count > 0 && _pick is { } pending && _map is not null)
             {
-                // Freed cells become pickable for whoever is up now (their open PickRequested keeps its old list).
-                var valid = MapService.ValidBasePicks(current, Settings.DisallowAdjacentBases);
-                _pick = pending with { Valid = valid.Indices, Relaxed = valid.Relaxed };
+                // Freed cells may become pickable for whoever is up now (their open PickRequested keeps its old list).
+                var (valid, relaxed) = ValidPicksFor(pending.PlayerId);
+                _pick = pending with { Valid = valid, Relaxed = relaxed };
             }
 
             if (freed.Count == 0 && !pickerLeft) return null;

@@ -32,7 +32,8 @@ async function api(path, { method = 'GET', body, token } = {}) {
 }
 
 const EVENTS = ['RoomState', 'PlayerJoined', 'PlayerConnectionChanged', 'QuestionStarted', 'BattleAnnounced',
-  'AnswerCountChanged', 'RoundClosed', 'PhaseChanged', 'MapUpdated', 'PickRequested', 'PickWaiting', 'Error'];
+  'BattleNominated', 'AnswerCountChanged', 'RoundClosed', 'PhaseChanged', 'MapUpdated', 'PickRequested', 'PickWaiting',
+  'GameFinished', 'Error'];
 
 function connectHub(token) {
   const conn = new signalR.HubConnectionBuilder()
@@ -218,6 +219,12 @@ try {
   check(closedState.playerQuestion == null && closedState.lastRoundResult?.roundId === roundId,
     'rejoin after closure restores the last result');
 
+  // Anna won this grab, so she now picks a free adjacent territory before any new round can open (M4-A).
+  const firstGrabPick = (await anna.hub.waitFor('PickRequested')).payload;
+  check(firstGrabPick.validTerritoryIndices.length > 0, 'grab winner is asked to pick after the round closes');
+  await anna.hub.conn.invoke('PickTerritory', firstGrabPick.validTerritoryIndices[0]);
+  await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.ownerPlayerId === anna.id && !c.isBase));
+
   // ---- Rejoin mid-round, then the deadline timer closes the round on its own ----
   host.events.length = 0;
   const t0 = Date.now();
@@ -255,9 +262,87 @@ try {
   check(racedState.currentRound ? stateIndex < closeIndex : stateIndex > closeIndex,
     'concurrent rejoin/close delivers a snapshot consistent with event order');
 
-  // ---- Room close stops a running timer without errors ----
+  // ---- M4: Conquest grab pick, battle (nominate -> confirm -> duel), then end the game ----
+  for (const x of [host, anna2, bela.hub, cili.hub]) x.events.length = 0;
+
+  // A grab: Anna answers correctly first, so she becomes the picker and takes a free adjacent cell.
   await host.conn.invoke('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab });
-  check((await api(`/api/rooms/${code}`, { method: 'DELETE', token: gmToken })).status === 204, 'closing the room with a round open -> 204');
+  const grabQ = (await anna2.waitFor('QuestionStarted', (q) => q.type === 0)).payload;
+  await anna2.conn.invoke('SubmitAnswer', { roundId: grabQ.roundId, option: 'B' });
+  const grabClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === grabQ.roundId)).payload;
+  check(grabClosed.kind === Kind.Grab && grabClosed.winnerPlayerIds[0] === anna.id, 'grab: fastest correct player wins');
+
+  const grabPick = (await anna2.waitFor('PickRequested')).payload;
+  check(Array.isArray(grabPick.validTerritoryIndices) && grabPick.validTerritoryIndices.length > 0, 'grab winner is asked to pick a free adjacent cell');
+  await bela.hub.waitFor('PickWaiting', (p) => p.id === anna.id);
+  const grabCell = grabPick.validTerritoryIndices[0];
+  await anna2.conn.invoke('PickTerritory', grabCell);
+  const grabbed = (await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.index === grabCell))).payload;
+  const grabbedCell = grabbed.changedTerritories.find((c) => c.index === grabCell);
+  check(grabbedCell.ownerPlayerId === anna.id && grabbedCell.isBase === false, 'grabbed cell belongs to the winner and is not a base');
+
+  // A battle: find an enemy cell adjacent to a cell Anna owns, let Anna nominate it, the host confirm it.
+  const mapSnap = (await api(`/api/rooms/${code}`, { token: gmToken })).body.map;
+  const cols = mapSnap.cols;
+  const owner = new Map(mapSnap.territories.map((t) => [t.index, t.ownerPlayerId]));
+  const neighbours = (i) => {
+    const r = Math.floor(i / cols), c = i % cols, out = [];
+    if (r > 0) out.push(i - cols);
+    if (c > 0) out.push(i - 1);
+    if (c < cols - 1) out.push(i + 1);
+    if (r < mapSnap.rows - 1) out.push(i + cols);
+    return out;
+  };
+  let battleTarget = null;
+  for (const t of mapSnap.territories) {
+    if (t.ownerPlayerId && t.ownerPlayerId !== anna.id && neighbours(t.index).some((n) => owner.get(n) === anna.id)) {
+      battleTarget = t; break;
+    }
+  }
+  check(battleTarget !== null, 'an enemy territory adjacent to Anna exists to battle for');
+  const defenderId = battleTarget.ownerPlayerId;
+  const defender = byId[defenderId];
+
+  await anna2.conn.invoke('NominateTarget', battleTarget.index);
+  const nominated = (await host.waitFor('BattleNominated')).payload;
+  check(nominated.attackerId === anna.id && nominated.defenderId === defenderId && nominated.targetTerritoryIndex === battleTarget.index,
+    'host is told who nominated which target');
+
+  host.events.length = 0;
+  await host.conn.invoke('ConfirmBattle', { questionId: DEMO_EST });
+  const battleHostQ = (await host.waitFor('QuestionStarted')).payload;
+  const battleQ = (await anna2.waitFor('QuestionStarted', (q) => q.roundId === battleHostQ.roundId)).payload;
+  check(battleQ.type === 1, 'confirmed battle opens an estimation duel');
+  // A spectator (neither attacker nor defender) only learns who fights.
+  const spectator = [anna, bela, cili].find((p) => p.id !== anna.id && p.id !== defenderId);
+  const spectatorHub = spectator === bela ? bela.hub : cili.hub;
+  await spectatorHub.waitFor('BattleAnnounced', (b) => b.targetTerritoryIndex === battleTarget.index);
+  check(true, 'non-participants receive BattleAnnounced, not the question');
+
+  // Anna guesses exactly, the defender far off: Anna takes the territory.
+  await anna2.conn.invoke('SubmitAnswer', { roundId: battleQ.roundId, number: 8849 });
+  await defender.hub.conn.invoke('SubmitAnswer', { roundId: battleQ.roundId, number: 1 });
+  const battleClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === battleQ.roundId)).payload;
+  check(battleClosed.kind === Kind.Battle && battleClosed.winnerPlayerIds[0] === anna.id, 'battle winner = closest guess');
+  const transfer = (await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.index === battleTarget.index))).payload;
+  check(transfer.changedTerritories.find((c) => c.index === battleTarget.index).ownerPlayerId === anna.id, 'battle hands the contested territory to the winner');
+
+  // ---- A running round still stops cleanly when the room closes (timer cancellation) ----
+  await host.conn.invoke('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab });
+  const openGrab = (await host.waitFor('QuestionStarted')).payload;
+  await host.conn.invoke('CloseRound'); // no answers -> no winner -> no pending pick
+  await host.waitFor('RoundClosed', (r) => r.roundId === openGrab.roundId);
+
+  // ---- End the game: Conquest -> Results, GameFinished with ranked standings ----
+  await host.conn.invoke('AdvancePhase', 3);
+  await host.waitFor('PhaseChanged', (p) => p === 3);
+  const finished = (await host.waitFor('GameFinished')).payload;
+  check(Array.isArray(finished.standings) && finished.standings.length === 3, 'GameFinished lists every player');
+  check(finished.standings[0].rank === 1 && finished.standings.every((s, i) => i === 0 || s.rank >= finished.standings[i - 1].rank),
+    'standings are ranked best first');
+  check(finished.standings.find((s) => s.playerId === anna.id).score >= grabbedCell.value, 'the leader score reflects owned territories');
+
+  check((await api(`/api/rooms/${code}`, { method: 'DELETE', token: gmToken })).status === 204, 'the finished room closes -> 204');
 
   await Promise.allSettled([host.conn.stop(), hostAgain.conn.stop(), anna2.conn.stop(), bela.hub.conn.stop(), cili.hub.conn.stop()]);
 } catch (err) {
