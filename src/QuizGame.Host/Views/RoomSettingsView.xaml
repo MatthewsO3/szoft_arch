@@ -1,7 +1,8 @@
 <UserControl x:Class="QuizGame.Host.Views.RoomSettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:icons="http://metro.mahapps.com/winfx/xaml/iconpacks">
+             xmlns:icons="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:controls="clr-namespace:QuizGame.Host.Controls">
     <UserControl.Resources>
         <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
@@ -12,6 +13,10 @@
         <Style x:Key="SettingInputStyle" TargetType="TextBox">
             <Setter Property="Padding" Value="6,4" />
             <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <Style TargetType="controls:HelpTooltip">
+            <Setter Property="Margin" Value="3,0,0,3" />
         </Style>
 
         <Style x:Key="CollapsedWhenEmptyTextStyle" TargetType="TextBlock">
@@ -34,7 +39,11 @@
                        TextWrapping="Wrap"
                        Margin="0,0,0,10" />
 
-            <TextBlock Text="Map size preset" Style="{StaticResource FieldLabelStyle}" />
+            <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Map size preset" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Map size preset"
+                                              Text="Sets the starting map size, which grows automatically if needed to provide at least three tiles per player." />
+                    </StackPanel>
             <ComboBox ItemsSource="{Binding MapPresets}"
                       SelectedItem="{Binding SelectedMapPreset, Mode=TwoWay}"
                       DisplayMemberPath="Label"
@@ -56,21 +65,33 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Grid.Column="0">
-                    <TextBlock Text="Territory value" Style="{StaticResource FieldLabelStyle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Territory value" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Territory value"
+                                              Text="Each normal territory adds this many points to the score of its current owner." />
+                    </StackPanel>
                     <TextBox Text="{Binding TerritoryValueText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="0" Grid.Column="2">
-                    <TextBlock Text="Base value" Style="{StaticResource FieldLabelStyle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Base value" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Base value"
+                                              Text="Each base adds this many points to the score of its current owner, replacing the normal territory value." />
+                    </StackPanel>
                     <TextBox Text="{Binding BaseValueText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="1" Grid.Column="0">
-                    <TextBlock Text="Min players" Style="{StaticResource FieldLabelStyle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Min players" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Min players"
+                                              Text="At least this many players must be connected before the host can start the game." />
+                    </StackPanel>
                     <TextBox Text="{Binding MinPlayersText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
@@ -79,10 +100,8 @@
                 <StackPanel Grid.Row="1" Grid.Column="2">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="Max Conquest rounds" Style="{StaticResource FieldLabelStyle}" />
-                        <icons:PackIconLucide Kind="CircleQuestionMark" Width="16" Height="16"
-                                   Margin="5,0,0,3" Foreground="#6B7280" Cursor="Help"
-                                   Focusable="True" AutomationProperties.Name="About Conquest rounds"
-                                   ToolTip="Conquest ends automatically when the map is full or this round limit is reached, whichever comes first." />
+                        <controls:HelpTooltip AutomationProperties.Name="About Conquest rounds"
+                                              Text="Conquest ends automatically when the map is full or this round limit is reached, whichever comes first." />
                     </StackPanel>
                     <TextBox Text="{Binding ConquestRoundsText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
@@ -90,31 +109,46 @@
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Grid.Column="0">
-                    <TextBlock Text="Pick timeout (s)" Style="{StaticResource FieldLabelStyle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Pick timeout (s)" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Pick timeout (s)"
+                                              Text="Seconds allowed for a base, Conquest claim or Expansion tile pick before a valid tile is chosen automatically." />
+                    </StackPanel>
                     <TextBox Text="{Binding PickTimeoutSecondsText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Grid.Column="2">
-                    <TextBlock Text="Default question (s)" Style="{StaticResource FieldLabelStyle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Default question (s)" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Default question (s)"
+                                              Text="Fallback answer time in seconds, used only when a question has no positive time limit of its own." />
+                    </StackPanel>
                     <TextBox Text="{Binding DefaultQuestionSecondsText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="3" Grid.Column="0">
-                    <TextBlock Text="Duel rounds" Style="{StaticResource FieldLabelStyle}" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Duel rounds" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Duel rounds"
+                                              Text="Duel ends automatically at this round limit or when only one player holds a base, whichever comes first." />
+                    </StackPanel>
                     <TextBox Text="{Binding DuelRoundsText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>
             </Grid>
 
-            <CheckBox Content="Disallow adjacent bases"
-                      IsChecked="{Binding DisallowAdjacentBases, Mode=TwoWay}"
-                      IsEnabled="{Binding CanEdit}"
-                      Margin="0,2,0,10" />
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
+                <CheckBox Content="Disallow adjacent bases"
+                          IsChecked="{Binding DisallowAdjacentBases, Mode=TwoWay}"
+                          IsEnabled="{Binding CanEdit}" VerticalAlignment="Center" />
+                <controls:HelpTooltip AutomationProperties.Name="About adjacent bases"
+                                      Text="Bases cannot share an edge unless no separated free tile remains; diagonal neighbours are allowed." />
+            </StackPanel>
 
             <TextBlock Text="{Binding ValidationError, Mode=OneWay}"
                        Foreground="Firebrick"
