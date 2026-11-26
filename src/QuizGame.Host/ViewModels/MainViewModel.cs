@@ -54,6 +54,7 @@ public sealed class MainViewModel : ViewModelBase
     private bool _loggedIn;
     private int _selectedTabIndex;
     private bool _roundOpen;
+    private bool _questionSent;
     private DuelNominationDto? _duelNomination;
     private string _answerProgress = "";
     private int _copyFeedbackVersion;
@@ -71,6 +72,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             if (e.PropertyName is nameof(PhaseControl.Phase) or nameof(PhaseControl.HasRoom))
                 QuestionBank.SetGamePhase(PhaseControl.HasRoom ? PhaseControl.Phase : null);
+            RaiseQuestionSelectionPrompt();
         };
         RoomSettings = new RoomSettingsViewModel(_connection, settings => PhaseControl.ApplySettings(settings));
         RoomSettings.PropertyChanged += (_, e) =>
@@ -89,7 +91,11 @@ public sealed class MainViewModel : ViewModelBase
                 && (PhaseControl.Phase != GamePhase.Duel || _duelNomination is not null), ShowError);
         CloseRoundCommand = new AsyncRelayCommand(_ => _connection.CloseRoundAsync(),
             _ => HasRoom && _connection.IsConnected && _roundOpen, ShowError);
-        QuestionBank.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(QuestionBank.CanSendSelectedQuestion)) RefreshRoundCommands(); };
+        QuestionBank.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(QuestionBank.CanSendSelectedQuestion) or nameof(QuestionBank.SelectedQuestion))
+                RefreshRoundCommands();
+        };
         CopyRoomCodeCommand = new RelayCommand(_ => CopyRoomCode(), _ => HasRoom);
 
         _connection.RoomStateReceived += s => OnUi(() => ApplyState(s));
@@ -110,6 +116,7 @@ public sealed class MainViewModel : ViewModelBase
         _connection.QuestionStarted += q => OnUi(() =>
         {
             _duelNomination = null;
+            _questionSent = true;
             Question.Start(q);
             _roundOpen = true;
             AnswerProgress = "";
@@ -120,6 +127,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             Question.Close(r);
             _roundOpen = false;
+            _questionSent = false;
             PhaseControl.RecordRoundClosed(r);
             RefreshRoundCommands();
         });
@@ -128,6 +136,7 @@ public sealed class MainViewModel : ViewModelBase
         _connection.PhaseChanged += phase => OnUi(() =>
         {
             _duelNomination = null;
+            _questionSent = false;
             RoomSettings.SetPhase(phase);
             Map.ApplyPhaseChanged(phase);
             PhaseControl.ApplyPhaseChanged(phase);
@@ -145,6 +154,7 @@ public sealed class MainViewModel : ViewModelBase
         _connection.GameFinished += finished => OnUi(() =>
         {
             _roundOpen = false;
+            _questionSent = false;
             RefreshRoundCommands();
             RoomSettings.SetPhase(GamePhase.Results);
             Map.ApplyGameFinished(finished);
@@ -173,20 +183,37 @@ public sealed class MainViewModel : ViewModelBase
     {
         ((AsyncRelayCommand)SendQuestionCommand).RaiseCanExecuteChanged();
         ((AsyncRelayCommand)CloseRoundCommand).RaiseCanExecuteChanged();
+        RaiseQuestionSelectionPrompt();
     }
 
-    private Task SendQuestionAsync()
+    public bool ShowQuestionSelectionBanner =>
+        HasRoom && _connection.IsConnected && !_roundOpen
+        && (PhaseControl.Phase is GamePhase.Conquest or GamePhase.Expansion
+            || PhaseControl.Phase == GamePhase.Duel && _duelNomination is not null)
+        && !_questionSent;
+
+    private void RaiseQuestionSelectionPrompt()
+    {
+        Raise(nameof(ShowQuestionSelectionBanner));
+    }
+
+    private async Task SendQuestionAsync()
     {
         var selected = QuestionBank.SelectedQuestion ?? throw new InvalidOperationException("Select a question first.");
         ErrorMessage = "";
         if (!QuestionBank.CanSendSelectedQuestion)
         {
             ErrorMessage = QuestionBank.QuestionTypeGuidance;
-            return Task.CompletedTask;
+            return;
         }
-        return PhaseControl.Phase == GamePhase.Duel
-            ? _connection.ConfirmDuelAsync(selected.Id)
-            : _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
+
+        if (PhaseControl.Phase == GamePhase.Duel)
+            await _connection.ConfirmDuelAsync(selected.Id);
+        else
+            await _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
+
+        _questionSent = true;
+        RaiseQuestionSelectionPrompt();
     }
     public ICommand CopyRoomCodeCommand { get; }
 
@@ -352,6 +379,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         Question.Reset();
         _roundOpen = false;
+        _questionSent = false;
         _duelNomination = null;
         AnswerProgress = "";
         RoomCode = "";
@@ -367,6 +395,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         Question.ApplyState(state);
         _roundOpen = state.CurrentRound is not null;
+        _questionSent = _roundOpen;
         _duelNomination = state.CurrentDuelNomination;
         AnswerProgress = state.AnswerCount is { } count ? $"Answered {count.Answered}/{count.Total}" : "";
         Players.Clear();
