@@ -14,7 +14,7 @@ public class RoomSettingsViewModelTests
         Assert.Equal(MapPreset.Medium, vm.SelectedMapPreset.Value);
         Assert.Equal("100", vm.TerritoryValueText);
         Assert.Equal("300", vm.BaseValueText);
-        Assert.Equal("5", vm.ConquestRoundsText);
+        Assert.Equal("10", vm.ConquestRoundsText);
         Assert.Equal("10", vm.DuelRoundsText);
         Assert.Equal("3", vm.BaseHealthText);
         Assert.Equal("2", vm.MinPlayersText);
