@@ -13,7 +13,6 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _viewModel;
-        _viewModel.Map.OpenRequested += () => OpenMapWindow(this, new RoutedEventArgs());
     }
 
     // PasswordBox.Password is deliberately not bindable, so it is pushed into the view model here.

@@ -140,6 +140,8 @@ public sealed class MainViewModel : ViewModelBase
             RoomSettings.SetPhase(phase);
             Map.ApplyPhaseChanged(phase);
             PhaseControl.ApplyPhaseChanged(phase);
+            if (phase == GamePhase.BaseSelection)
+                SelectedTabIndex = 1;
             RefreshRoundCommands();
         });
         _connection.DuelNominated += nomination => OnUi(() =>
