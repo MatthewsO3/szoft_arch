@@ -170,3 +170,34 @@ internal sealed class FakeQuestionBankDialogService : IQuestionBankDialogService
         return ConfirmResult;
     }
 }
+
+internal sealed class FakeRoomControlClient : IRoomControlClient
+{
+    public bool IsConnected { get; set; } = true;
+
+    public List<RoomSettings> UpdatedSettings { get; } = [];
+    public int StartGameCalls { get; private set; }
+    public List<GamePhase> AdvancePhaseTargets { get; } = [];
+
+    public Func<RoomSettings, Task>? UpdateSettingsHandler { get; set; }
+    public Func<Task>? StartGameHandler { get; set; }
+    public Func<GamePhase, Task>? AdvancePhaseHandler { get; set; }
+
+    public Task UpdateSettingsAsync(RoomSettings settings)
+    {
+        UpdatedSettings.Add(settings);
+        return UpdateSettingsHandler is not null ? UpdateSettingsHandler(settings) : Task.CompletedTask;
+    }
+
+    public Task StartGameAsync()
+    {
+        StartGameCalls++;
+        return StartGameHandler is not null ? StartGameHandler() : Task.CompletedTask;
+    }
+
+    public Task AdvancePhaseAsync(GamePhase targetPhase)
+    {
+        AdvancePhaseTargets.Add(targetPhase);
+        return AdvancePhaseHandler is not null ? AdvancePhaseHandler(targetPhase) : Task.CompletedTask;
+    }
+}
