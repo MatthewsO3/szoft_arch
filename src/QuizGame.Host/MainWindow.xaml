@@ -133,13 +133,26 @@
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <TextBlock Text="{Binding RoomCode}" FontSize="64" FontWeight="Bold" FontFamily="Consolas"
                                                    VerticalAlignment="Center" />
-                                        <Button Content="{Binding CopyRoomCodeText, Mode=OneWay}"
-                                                Command="{Binding CopyRoomCodeCommand}"
-                                                MinWidth="70"
-                                                Padding="12,6"
+                                        <Button Command="{Binding CopyRoomCodeCommand}"
+                                                Width="32" Height="32"
+                                                Padding="7"
                                                 Margin="16,0,0,0"
                                                 VerticalAlignment="Center"
-                                                ToolTip="Copy room code to clipboard" />
+                                                AutomationProperties.Name="Copy room code"
+                                                ToolTip="Copy room code to clipboard">
+                                            <icons:PackIconLucide Width="16" Height="16">
+                                                <icons:PackIconLucide.Style>
+                                                    <Style TargetType="icons:PackIconLucide">
+                                                        <Setter Property="Kind" Value="Copy" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding CopyRoomCodeText}" Value="Copied!">
+                                                                <Setter Property="Kind" Value="Check" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </icons:PackIconLucide.Style>
+                                            </icons:PackIconLucide>
+                                        </Button>
                                     </StackPanel>
                                 </StackPanel>
 
