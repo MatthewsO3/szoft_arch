@@ -108,7 +108,7 @@ Game master (Játékmester), Player (Játékos), Room (Szoba), Map (Térkép), T
 Lobby ──► BaseSelection ──► Conquest ──► Expansion ──► Duel ──► Results
 ```
 
-Only the game master advances phases. Transitions are validated on the server (no skipping, no going back).
+The game master starts the game. The server then advances completed phases automatically: after the last base pick, the Conquest round limit (or a full map), the final Expansion tile pick, and the Duel round limit (or one remaining base holder). Round results and territory changes are published before advancing. A full map passes through Expansion directly to Duel. The host may still advance Conquest early or end Duel early, but cannot interrupt a round/pick, leave base selection unfinished, or enter Duel before the map is full. Transitions remain forward-only and server-validated.
 
 Phase rules in detail:
 
@@ -129,7 +129,7 @@ Phase rules in detail:
 
 **Expansion (terjeszkedés)** — fills the rest of the map:
 - The host opens **estimation** questions. The **closest guess** wins and picks one free tile (any free tile).
-- Repeats until no free tile remains, then the host advances to Duel.
+- Repeats until no free tile remains, then the server automatically advances to Duel after the final pick.
 
 **Duel (csata)** — runs up to `DuelRounds` rounds (default 10), using the same rotating turn order:
 - The active player (front of the order) nominates a tile to attack; it must be owned by another player and adjacent to a tile the attacker owns. The host confirms and opens **one multiple-choice** question between attacker and defender only.
@@ -569,7 +569,7 @@ Integration points are weekly: at the end of each milestone, merge to `main` and
 | D1 | Phase behaviour details | As in 4.2 |
 | D2 | Winners per multiple-choice round | 1 (configurable) |
 | D3 | Who selects the battle target | Attacker nominates, host confirms |
-| D4 | End of Conquest | Host ends; suggestions at all-owned / 10 rounds |
+| D4 | End of Conquest | Automatically at `ConquestRounds` or a full map; host may advance early between rounds |
 | D5 | Speed bonus points | None in v1 |
 | D6 | Map shape and size | Square grid, 4-neighbour, S/M/L presets |
 | D7 | Answer change before deadline | Not allowed; first answer final |

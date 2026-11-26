@@ -603,7 +603,7 @@ public sealed partial class GameRoom
         {
             if (_map is not { } map) return false;
             var baseOwners = map.Territories.Where(t => t.IsBase && t.OwnerId is not null).Select(t => t.OwnerId!.Value).Distinct().ToList();
-            return baseOwners.Count == 1 && _players.Count > 1;
+            return baseOwners.Count == 1;
         }
     }
 

@@ -148,7 +148,7 @@ New tables `Rounds` and `Answers` need a migration: `dotnet ef migrations add Ro
 
 The host starts the game with `StartGame` (Lobby → BaseSelection, generates the map), sends one estimation question as a
 `BaseOrder` round, and every player then picks a base territory in ranking order (`PickRequested` / `PickTerritory`, random
-assignment after `PickTimeoutSeconds`). `AdvancePhase(Conquest)` closes base selection. Hub methods and events:
+assignment after `PickTimeoutSeconds`). The last base pick automatically starts Conquest. Later phases advance when their rounds or tile picks are complete; the host can still end Conquest or Duel early between rounds. Hub methods and events:
 `docs/api-contract.md` §6. Rounds are phase-gated now: `BaseOrder` only in BaseSelection, `Grab` / `Battle` only in Conquest.
 
 ```

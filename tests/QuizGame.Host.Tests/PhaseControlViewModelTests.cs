@@ -20,24 +20,30 @@ public class PhaseControlViewModelTests
         Assert.False(vm.NextPhaseCommand.CanExecute(null));
         Assert.False(vm.EndGameCommand.CanExecute(null));
 
-        // BaseSelection: only Next phase enabled
+        // Base selection waits for all base picks.
         vm.ApplyPhaseChanged(GamePhase.BaseSelection);
         Assert.False(vm.IsLobby);
         Assert.True(vm.IsLobbyCompleted);
         Assert.True(vm.IsBaseSelection);
         Assert.False(vm.IsBaseSelectionCompleted);
         Assert.False(vm.StartGameCommand.CanExecute(null));
-        Assert.True(vm.NextPhaseCommand.CanExecute(null));
+        Assert.False(vm.NextPhaseCommand.CanExecute(null));
         Assert.False(vm.EndGameCommand.CanExecute(null));
 
-        // Conquest: only End game enabled
+        // Conquest can be ended early with Next phase.
         vm.ApplyPhaseChanged(GamePhase.Conquest);
         Assert.True(vm.IsBaseSelectionCompleted);
         Assert.True(vm.IsConquest);
         Assert.False(vm.IsConquestCompleted);
         Assert.False(vm.StartGameCommand.CanExecute(null));
-        Assert.False(vm.NextPhaseCommand.CanExecute(null));
+        Assert.True(vm.NextPhaseCommand.CanExecute(null));
+        Assert.False(vm.EndGameCommand.CanExecute(null));
+
+        vm.ApplyPhaseChanged(GamePhase.Expansion);
+        Assert.False(vm.NextPhaseCommand.CanExecute(null)); // map not full
+        vm.ApplyPhaseChanged(GamePhase.Duel);
         Assert.True(vm.EndGameCommand.CanExecute(null));
+        Assert.False(vm.NextPhaseCommand.CanExecute(null));
 
         // Results: all phase transitions disabled
         vm.ApplyPhaseChanged(GamePhase.Results);
@@ -83,15 +89,15 @@ public class PhaseControlViewModelTests
         Assert.Equal(1, client.StartGameCalls);
         Assert.Equal(GamePhase.Lobby, vm.Phase); // waits for server PhaseChanged
 
-        vm.ApplyPhaseChanged(GamePhase.BaseSelection);
-        await vm.AdvanceToConquestAsync();
-        Assert.Equal([GamePhase.Conquest], client.AdvancePhaseTargets);
-        Assert.Equal(GamePhase.BaseSelection, vm.Phase);
-
         vm.ApplyPhaseChanged(GamePhase.Conquest);
-        await vm.EndGameAsync();
-        Assert.Equal([GamePhase.Conquest, GamePhase.Results], client.AdvancePhaseTargets);
+        await vm.AdvancePhaseAsync();
+        Assert.Equal([GamePhase.Expansion], client.AdvancePhaseTargets);
         Assert.Equal(GamePhase.Conquest, vm.Phase);
+
+        vm.ApplyPhaseChanged(GamePhase.Duel);
+        await vm.EndGameAsync();
+        Assert.Equal([GamePhase.Expansion, GamePhase.Results], client.AdvancePhaseTargets);
+        Assert.Equal(GamePhase.Duel, vm.Phase);
     }
 
     [Fact]
@@ -101,7 +107,7 @@ public class PhaseControlViewModelTests
         vm.SetRoomOpened(new RoomSettings { MinPlayers = 2 });
         vm.SetConnectionState(true);
         vm.SetPlayerCounts(2, 2);
-        vm.ApplyPhaseChanged(GamePhase.BaseSelection);
+        vm.ApplyPhaseChanged(GamePhase.Conquest);
 
         Assert.True(vm.NextPhaseCommand.CanExecute(null));
 
@@ -127,9 +133,11 @@ public class PhaseControlViewModelTests
 
         vm.ApplyPickWaiting(new PlayerSummary { Id = Guid.NewGuid(), Name = "Anna" });
         Assert.Contains("Anna is picking", vm.StatusGuidance);
+        Assert.False(vm.NextPhaseCommand.CanExecute(null));
 
         vm.ApplyMapUpdated(new MapUpdate([], []));
         Assert.DoesNotContain("Anna is picking", vm.StatusGuidance);
+        Assert.True(vm.NextPhaseCommand.CanExecute(null));
 
         vm.ApplyPickWaiting(new PlayerSummary { Id = Guid.NewGuid(), Name = "Bela" });
         Assert.Contains("Bela is picking", vm.StatusGuidance);
@@ -147,7 +155,7 @@ public class PhaseControlViewModelTests
     {
         var p1 = Guid.NewGuid();
         var vm = new PhaseControlViewModel(new FakeRoomControlClient());
-        vm.SetRoomOpened(new RoomSettings { DuelRounds = 2 });
+        vm.SetRoomOpened(new RoomSettings { ConquestRounds = 2 });
         vm.SetConnectionState(true);
         vm.SetPlayerCounts(2, 2);
 
@@ -162,7 +170,7 @@ public class PhaseControlViewModelTests
         {
             RoomCode = "123456",
             Phase = GamePhase.Conquest,
-            Settings = new RoomSettings { DuelRounds = 2 },
+            Settings = new RoomSettings { ConquestRounds = 2 },
             Players =
             [
                 new PlayerSummary { Id = p1, Name = "Anna", Connected = true },
@@ -185,7 +193,7 @@ public class PhaseControlViewModelTests
         vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Conquest });
         Assert.True(vm.ReachedSuggestedMaxRounds);
         Assert.True(vm.SuggestEndConquest);
-        Assert.Contains("2/2 suggested rounds", vm.ConquestSuggestionText);
+        Assert.Contains("2/2 rounds", vm.ConquestSuggestionText);
 
         // All territories owned via MapUpdate takes precedence
         vm.ApplyMapUpdated(new MapUpdate(
