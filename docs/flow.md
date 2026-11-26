@@ -1,3 +1,5 @@
+Phase progression is automatic after completing the current phase, including any pending tile pick. The host may advance Conquest early or end Duel early between rounds. Base selection must finish and Expansion must fill the map before moving on. A full map ends Conquest early and passes through Expansion directly to Duel.
+
 So here is the flow: Base selection: after starting the game we have a random order of players. In the random order the 1st player pick a tile thats gonna be his base, then the next one till all players 
   picked. After that comes the Conquer: starting with the same order as base selection: each player pick a tile in order after everyone picked: multiple choiche question - whoever gets it right his nominated 
   tile becomes his - next round we move the order to the left - so the 1st becomes last, 2nd becomes 1st and so on - then same everyone picks - answers - right ones gets the tile - this goes for as many round 

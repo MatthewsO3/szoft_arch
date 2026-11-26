@@ -72,7 +72,7 @@ try {
 
   // Small map + few rounds keeps the smoke quick.
   const code = (await api('/api/rooms', { method: 'POST', token: gmToken, body: {
-    settings: { mapPreset: 0, pickTimeoutSeconds: 3, conquestRounds: 1, duelRounds: 3, baseHealth: 2 } } })).body.roomCode;
+    mapPreset: 0, pickTimeoutSeconds: 3, conquestRounds: 1, duelRounds: 1, baseHealth: 2 } })).body.roomCode;
 
   const host = connectHub(gmToken);
   await host.conn.start();
@@ -97,9 +97,7 @@ try {
   async function resolvePicks(expectedPurpose) {
     // Keep answering PickRequested until nobody is asked.
     for (;;) {
-      const next = players.find((p) => p.hub.events.some((e) => e.name === 'PickRequested' &&
-        !e.handled && (e.handled = true)));
-      // Simpler: poll each player's latest unhandled PickRequested.
+      // Poll each player's latest unhandled PickRequested.
       let acted = false;
       for (const p of players) {
         const evt = p.hub.events.find((e) => e.name === 'PickRequested' && !e.done);
@@ -119,7 +117,6 @@ try {
   await resolvePicks(Purpose.Base);
   check(true, 'all bases picked');
 
-  await host.conn.invoke('AdvancePhase', Phase.Conquest);
   await host.waitFor('PhaseChanged', (p) => p === Phase.Conquest);
 
   // ---- Conquest: claim stage + one multiple-choice question ----
@@ -134,7 +131,6 @@ try {
   check(cqClosed.kind === 0, 'conquest round closed');
   check(cqClosed.winnerPlayerIds.length === 3, 'every correct claimer kept their tile');
 
-  await host.conn.invoke('AdvancePhase', Phase.Expansion);
   await host.waitFor('PhaseChanged', (p) => p === Phase.Expansion);
 
   // ---- Expansion: estimation rounds until the map is full ----
@@ -149,6 +145,7 @@ try {
     for (const p of players) await p.hub.conn.invoke('SubmitAnswer', { roundId: eq.roundId, number: guess++ });
     await host.waitFor('RoundClosed', (r) => r.roundId === eq.roundId);
     // The closest guess is asked to pick.
+    await Promise.race(players.map((p) => p.hub.waitFor('PickRequested', (r) => r.purpose === Purpose.Expansion)));
     const picker = players.find((p) => p.hub.events.some((e) => e.name === 'PickRequested' && e.payload.purpose === Purpose.Expansion));
     if (picker) {
       const req = picker.hub.events.find((e) => e.name === 'PickRequested' && e.payload.purpose === Purpose.Expansion).payload;
@@ -159,7 +156,6 @@ try {
   const full = (await api(`/api/rooms/${code}`, { token: gmToken })).body.map;
   check(!full.territories.some((t) => t.ownerPlayerId === null), 'Expansion filled the whole map');
 
-  await host.conn.invoke('AdvancePhase', Phase.Duel);
   await host.waitFor('PhaseChanged', (p) => p === Phase.Duel);
 
   // ---- Duel: active player nominates, host confirms, attacker wins ----
@@ -194,7 +190,6 @@ try {
   check(after.ownerPlayerId === attackerId, 'attacker captured the (normal) tile');
 
   // ---- Results ----
-  await host.conn.invoke('AdvancePhase', Phase.Results);
   await host.waitFor('PhaseChanged', (p) => p === Phase.Results);
   const finished = (await host.waitFor('GameFinished')).payload;
   check(finished.standings.length === 3 && finished.standings[0].rank === 1, 'GameFinished has ranked standings');
