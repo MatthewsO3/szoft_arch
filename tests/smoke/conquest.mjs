@@ -159,18 +159,18 @@ try {
   await host.waitFor('PhaseChanged', (p) => p === Phase.Duel);
 
   // ---- Duel: active player nominates, host confirms, attacker wins ----
-  for (const p of players) p.hub.events.length = 0;
-  host.events.length = 0;
   const snap = (await api(`/api/rooms/${code}`, { token: gmToken })).body;
   const attackerId = snap.turnOrder[0];
   const attacker = byId[attackerId];
-  const owner = new Map(snap.map.territories.map((t) => [t.index, t.ownerPlayerId]));
-  const target = snap.map.territories.find((t) => !t.isBase && t.ownerPlayerId && t.ownerPlayerId !== attackerId
-    && neighbours(snap.map.rows, snap.map.cols, t.index).some((n) => owner.get(n) === attackerId))
-    ?? snap.map.territories.find((t) => t.ownerPlayerId && t.ownerPlayerId !== attackerId
-    && neighbours(snap.map.rows, snap.map.cols, t.index).some((n) => owner.get(n) === attackerId));
-  check(!!target, 'found an adjacent enemy tile to attack');
+  const targetPick = (await attacker.hub.waitFor('PickRequested', (p) => p.purpose === Purpose.DuelTarget)).payload;
+  const validTargets = new Set(targetPick.validTerritoryIndices);
+  const target = snap.map.territories.find((t) => validTargets.has(t.index) && !t.isBase)
+    ?? snap.map.territories.find((t) => validTargets.has(t.index));
+  check(!!target, 'active player was prompted with an adjacent enemy tile');
   const defender = byId[target.ownerPlayerId];
+
+  for (const p of players) p.hub.events.length = 0;
+  host.events.length = 0;
 
   await attacker.hub.conn.invoke('NominateTarget', target.index);
   const nominated = (await host.waitFor('DuelNominated')).payload;
@@ -187,7 +187,10 @@ try {
   const dClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === dq.roundId)).payload;
   check(dClosed.kind === 2, 'duel closed');
   const after = (await api(`/api/rooms/${code}`, { token: gmToken })).body.map.territories.find((t) => t.index === target.index);
-  check(after.ownerPlayerId === attackerId, 'attacker captured the (normal) tile');
+  check(target.isBase
+    ? after.ownerPlayerId === target.ownerPlayerId && after.health === target.health - 1
+    : after.ownerPlayerId === attackerId,
+  target.isBase ? 'attacker damaged the base' : 'attacker captured the normal tile');
 
   // ---- Results ----
   await host.waitFor('PhaseChanged', (p) => p === Phase.Results);

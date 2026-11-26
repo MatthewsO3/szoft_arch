@@ -109,6 +109,18 @@ public sealed class PhaseCoordinator(
         {
             if (await AdvancePhaseCoreAsync(room, next) is not null) break;
         }
+
+        // Duel begins with the active player choosing an adjacent enemy territory.
+        if (room.Phase == GamePhase.Duel && room.StartDuelTargetPick(time.GetUtcNow()) is { } duelPick)
+            await PublishPickAsync(room, duelPick);
+    }
+
+    public async Task PublishDuelNominationCoreAsync(GameRoom room, DuelNomination nomination)
+    {
+        CancelTimer(room.Code, null);
+        await hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
+            HubNames.Events.DuelNominated,
+            new DuelNominationDto(nomination.AttackerId, nomination.DefenderId, nomination.TargetTerritoryIndex));
     }
 
     public async Task SendPickStateCoreAsync(GameRoom room, IClientProxy caller, Guid? playerId)
@@ -166,6 +178,7 @@ public sealed class PhaseCoordinator(
     private async Task AfterPickCoreAsync(GameRoom room, PickResult result)
     {
         if (result.Change is { } change) await AfterMapChangeCoreAsync(room, change);
+        if (result.Nomination is { } nomination) await PublishDuelNominationCoreAsync(room, nomination);
 
         // Conquest claim stage finished: let the round coordinator open the question.
         if (result.AllClaimsIn && OnClaimsReady is { } ready) await ready(room);
