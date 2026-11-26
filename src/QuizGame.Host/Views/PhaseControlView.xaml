@@ -77,10 +77,14 @@
                                         <Setter Property="Background" Value="#DCFCE7" />
                                         <Setter Property="BorderBrush" Value="#86EFAC" />
                                     </DataTrigger>
-                                    <DataTrigger Binding="{Binding IsLobby}" Value="True">
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsLobby}" Value="True" />
+                                            <Condition Binding="{Binding HasRoom}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
                                         <Setter Property="Background" Value="#2563EB" />
                                         <Setter Property="BorderBrush" Value="#1D4ED8" />
-                                    </DataTrigger>
+                                    </MultiDataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
@@ -91,10 +95,14 @@
                                         <DataTrigger Binding="{Binding IsLobbyCompleted}" Value="True">
                                             <Setter Property="Foreground" Value="#166534" />
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsLobby}" Value="True">
+                                        <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsLobby}" Value="True" />
+                                            <Condition Binding="{Binding HasRoom}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
                                             <Setter Property="Foreground" Value="White" />
                                             <Setter Property="FontWeight" Value="SemiBold" />
-                                        </DataTrigger>
+                                        </MultiDataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
