@@ -215,6 +215,7 @@ public sealed class MainViewModel : ViewModelBase
             await _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
 
         _questionSent = true;
+        QuestionBank.SelectedQuestion = null;
         RaiseQuestionSelectionPrompt();
     }
     public ICommand CopyRoomCodeCommand { get; }
