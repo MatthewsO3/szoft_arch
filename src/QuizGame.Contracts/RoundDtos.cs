@@ -73,6 +73,15 @@ public sealed record PickRequest(IReadOnlyList<int> ValidTerritoryIndices, DateT
 /// <summary>Spectator info for a battle the recipient is not part of (plan §6.3 BattleAnnounced).</summary>
 public sealed record BattleAnnouncement(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
 
+/// <summary>Host-only info that an attacker has nominated a battle target, awaiting confirmation (plan §4.2, D3).</summary>
+public sealed record BattleNominationDto(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
+
+/// <summary>Args for the host confirming a nominated battle (plan §4.2, D3): the estimation question to duel with.</summary>
+public sealed record ConfirmBattleRequest
+{
+    public Guid QuestionId { get; init; }
+}
+
 /// <summary>Host-only progress: how many of the eligible players have answered.</summary>
 public sealed record AnswerCount(int Answered, int Total);
 

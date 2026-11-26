@@ -35,6 +35,10 @@ public static class ErrorCodes
     public const string NotYourPick = "NotYourPick";
     public const string InvalidPick = "InvalidPick";
 
+    // Conquest battles (plan §4.2, D3)
+    public const string InvalidTarget = "InvalidTarget";
+    public const string NoNomination = "NoNomination";
+
     // Question bank (REST)
     public const string CategoryNotFound = "CategoryNotFound";
     public const string CategoryNameTaken = "CategoryNameTaken";

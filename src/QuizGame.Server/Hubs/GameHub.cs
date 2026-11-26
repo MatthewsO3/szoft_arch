@@ -172,6 +172,29 @@ public sealed class GameHub(
         if (!await rounds.CloseAsync(room)) throw new HubException(ErrorCodes.NoActiveRound);
     }
 
+    /// <summary>An attacker nominates a territory to battle for; the host is notified and confirms it (plan §4.2, D3).</summary>
+    [Authorize(Policy = Policies.PlayerOnly)]
+    public async Task NominateTarget(int territoryIndex)
+    {
+        var info = registry.Get(Context.ConnectionId);
+        if (info?.PlayerId is not { } playerId || !rooms.TryGet(info.RoomCode, out var room))
+            throw new HubException(ErrorCodes.NotAttached);
+
+        var error = await rounds.NominateTargetAsync(room, playerId, territoryIndex);
+        if (error is not null) throw new HubException(error);
+    }
+
+    /// <summary>Host confirms a nominated battle and opens the duel with the chosen estimation question (plan §4.2, D3).</summary>
+    [Authorize(Policy = Policies.GameMasterOnly)]
+    public async Task ConfirmBattle(ConfirmBattleRequest request)
+    {
+        var room = HostRoom();
+        if (request is null) throw new HubException(ErrorCodes.InvalidRound);
+
+        var error = await rounds.ConfirmBattleAsync(room, request.QuestionId, Context.ConnectionAborted);
+        if (error is not null) throw new HubException(error);
+    }
+
     /// <summary>A player's answer. The receive time is stamped here, on entry, never taken from the client (plan §7.2).</summary>
     [Authorize(Policy = Policies.PlayerOnly)]
     public async Task<AnswerAccepted> SubmitAnswer(SubmitAnswerRequest request)
