@@ -21,6 +21,7 @@ public sealed class GameSessionEntity
     public DateTimeOffset? EndedAt { get; set; }
     public List<PlayerEntity> Players { get; set; } = [];
     public List<RoundEntity> Rounds { get; set; } = [];
+    public List<TerritoryEntity> Territories { get; set; } = [];
 }
 
 public sealed class PlayerEntity
@@ -120,4 +121,21 @@ public sealed class QuestionOptionEntity
     public char Label { get; set; }
     public string Text { get; set; } = "";
     public bool IsCorrect { get; set; }
+}
+
+/// <summary>
+/// One map cell of a session (plan §5.1 Territories). The owner is a plain player id without a foreign key,
+/// so a history write never fails because the player row is missing or was removed.
+/// </summary>
+public sealed class TerritoryEntity
+{
+    public Guid Id { get; set; }
+    public Guid SessionId { get; set; }
+    public GameSessionEntity? Session { get; set; }
+    public int Index { get; set; }
+    public int Row { get; set; }
+    public int Col { get; set; }
+    public int Value { get; set; }
+    public bool IsBase { get; set; }
+    public Guid? OwnerPlayerId { get; set; }
 }

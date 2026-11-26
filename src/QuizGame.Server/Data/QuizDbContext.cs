@@ -9,6 +9,7 @@ public sealed class QuizDbContext(DbContextOptions<QuizDbContext> options) : DbC
     public DbSet<PlayerEntity> Players => Set<PlayerEntity>();
     public DbSet<RoundEntity> Rounds => Set<RoundEntity>();
     public DbSet<AnswerEntity> Answers => Set<AnswerEntity>();
+    public DbSet<TerritoryEntity> Territories => Set<TerritoryEntity>();
     public DbSet<CategoryEntity> Categories => Set<CategoryEntity>();
     public DbSet<QuestionEntity> Questions => Set<QuestionEntity>();
     public DbSet<QuestionOptionEntity> QuestionOptions => Set<QuestionOptionEntity>();
@@ -51,6 +52,14 @@ public sealed class QuizDbContext(DbContextOptions<QuizDbContext> options) : DbC
             e.Property(x => x.Kind).IsRequired().HasMaxLength(16);
             e.HasOne(x => x.Session).WithMany(x => x.Rounds).HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.SessionId, x.Seq }).IsUnique();
+        });
+
+        b.Entity<TerritoryEntity>(e =>
+        {
+            e.ToTable("Territories");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Session).WithMany(x => x.Territories).HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.SessionId, x.Index }).IsUnique();
         });
 
         b.Entity<AnswerEntity>(e =>

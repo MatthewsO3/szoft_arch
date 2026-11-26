@@ -11,7 +11,7 @@ namespace QuizGame.Server.Hubs;
 /// <summary>
 /// The single game hub. Group membership comes from the token claims, never from client arguments,
 /// so a player can only ever join the room their token was issued for (plan §6.3).
-/// Handles room presence and question rounds; phase and territory methods arrive with the map.
+/// Handles room presence, question rounds, phases, settings and base selection.
 /// </summary>
 [Authorize]
 public sealed class GameHub(
@@ -20,6 +20,7 @@ public sealed class GameHub(
     TimeProvider time,
     ISessionRecorder recorder,
     RoundCoordinator rounds,
+    PhaseCoordinator phases,
     ILogger<GameHub> logger) : Hub
 {
     public override async Task OnConnectedAsync()
@@ -92,6 +93,7 @@ public sealed class GameHub(
         await recorder.PlayerLeftAsync(room.SessionId, playerId);
         await RemovePlayerConnectionsAsync(room.Code, playerId, HubNames.Events.Kicked);
         await Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.PlayerLeft, removed);
+        await phases.OnPlayerRemovedAsync(room, playerId);
     }
 
     [Authorize(Policy = Policies.PlayerOnly)]
@@ -105,7 +107,50 @@ public sealed class GameHub(
         if (removed is not null) await recorder.PlayerLeftAsync(room.SessionId, playerId);
         await RemovePlayerConnectionsAsync(room.Code, playerId, notifyEvent: null);
         if (removed is not null)
+        {
             await Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.PlayerLeft, removed);
+            await phases.OnPlayerRemovedAsync(room, playerId);
+        }
+    }
+
+    /// <summary>Host changes the room rules; Lobby only (the map and the values are fixed once the game starts).</summary>
+    [Authorize(Policy = Policies.GameMasterOnly)]
+    public async Task UpdateSettings(RoomSettings settings)
+    {
+        var room = HostRoom();
+        if (settings is null) throw new HubException(ErrorCodes.InvalidSettings);
+        var error = await phases.UpdateSettingsAsync(room, settings);
+        if (error is not null) throw new HubException(error);
+    }
+
+    /// <summary>Lobby → BaseSelection: generates the map (needs <c>MinPlayers</c> connected players).</summary>
+    [Authorize(Policy = Policies.GameMasterOnly)]
+    public async Task StartGame()
+    {
+        var room = HostRoom();
+        var error = await phases.StartGameAsync(room);
+        if (error is not null) throw new HubException(error);
+    }
+
+    /// <summary>Validated phase transition: no skipping, no going back (plan §4.2).</summary>
+    [Authorize(Policy = Policies.GameMasterOnly)]
+    public async Task AdvancePhase(GamePhase targetPhase)
+    {
+        var room = HostRoom();
+        var error = await phases.AdvancePhaseAsync(room, targetPhase);
+        if (error is not null) throw new HubException(error);
+    }
+
+    /// <summary>The current picker chooses their base territory (plan §4.2 BaseSelection).</summary>
+    [Authorize(Policy = Policies.PlayerOnly)]
+    public async Task PickTerritory(int territoryIndex)
+    {
+        var info = registry.Get(Context.ConnectionId);
+        if (info?.PlayerId is not { } playerId || !rooms.TryGet(info.RoomCode, out var room))
+            throw new HubException(ErrorCodes.NotAttached);
+
+        var error = await phases.PickAsync(room, playerId, territoryIndex);
+        if (error is not null) throw new HubException(error);
     }
 
     /// <summary>Host opens a question round (plan §4.2). The server pushes <c>QuestionStarted</c> to each audience.</summary>

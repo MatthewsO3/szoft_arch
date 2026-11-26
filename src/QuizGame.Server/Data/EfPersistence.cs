@@ -140,6 +140,32 @@ public sealed class EfSessionRecorder(
             await db.SaveChangesAsync(ct); // Round + Answers: one SaveChanges = one transaction
         }, ct);
 
+    public Task TerritoriesChangedAsync(Guid sessionId, IReadOnlyList<TerritoryRecord> territories, CancellationToken ct = default) =>
+        Run("territory update", async db =>
+        {
+            var indices = territories.Select(t => t.Index).ToList();
+            var existing = await db.Territories
+                .Where(t => t.SessionId == sessionId && indices.Contains(t.Index))
+                .ToDictionaryAsync(t => t.Index, ct);
+
+            foreach (var cell in territories)
+            {
+                if (!existing.TryGetValue(cell.Index, out var row))
+                {
+                    row = new TerritoryEntity { Id = Guid.NewGuid(), SessionId = sessionId, Index = cell.Index };
+                    db.Territories.Add(row);
+                }
+
+                row.Row = cell.Row;
+                row.Col = cell.Col;
+                row.Value = cell.Value;
+                row.IsBase = cell.IsBase;
+                row.OwnerPlayerId = cell.OwnerPlayerId;
+            }
+
+            await db.SaveChangesAsync(ct);
+        }, ct);
+
     private async Task Run(string what, Func<QuizDbContext, Task> action, CancellationToken ct)
     {
         try

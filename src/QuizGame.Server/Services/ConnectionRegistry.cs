@@ -26,6 +26,12 @@ public sealed class ConnectionRegistry
         lock (_gate) return _byConnection.Values.Any(c => c.RoomCode == roomCode);
     }
 
+    /// <summary>All live connections of a room (host and players), e.g. to push each one its own snapshot.</summary>
+    public IReadOnlyList<ConnectionEntry> GetRoomConnections(string roomCode)
+    {
+        lock (_gate) return _byConnection.Values.Where(c => c.RoomCode == roomCode).ToList();
+    }
+
     /// <summary>Connection ids of the given players in a room (a player may have two during a reconnect).</summary>
     public IReadOnlyList<string> GetPlayerConnections(string roomCode, IReadOnlyCollection<Guid> playerIds)
     {

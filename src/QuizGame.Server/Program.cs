@@ -50,6 +50,8 @@ else
     throw new InvalidOperationException("Missing configuration 'ConnectionStrings:Default' (env ConnectionStrings__Default, see .env.example).");
 builder.Services.AddSingleton<GameRoomManager>();
 builder.Services.AddSingleton<ConnectionRegistry>();
+builder.Services.AddSingleton<RoomCommandGate>();
+builder.Services.AddSingleton<PhaseCoordinator>();
 builder.Services.AddSingleton<RoundCoordinator>();
 
 // Question source for rounds: the question bank (EF Core, or in-memory in Development without a database).

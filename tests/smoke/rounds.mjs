@@ -32,7 +32,7 @@ async function api(path, { method = 'GET', body, token } = {}) {
 }
 
 const EVENTS = ['RoomState', 'PlayerJoined', 'PlayerConnectionChanged', 'QuestionStarted', 'BattleAnnounced',
-  'AnswerCountChanged', 'RoundClosed', 'Error'];
+  'AnswerCountChanged', 'RoundClosed', 'PhaseChanged', 'MapUpdated', 'PickRequested', 'PickWaiting', 'Error'];
 
 function connectHub(token) {
   const conn = new signalR.HubConnectionBuilder()
@@ -110,12 +110,49 @@ try {
 
   // ---- Refusals before any round ----
   check(has(await host.rejects('SendQuestion', { questionId: '00000000-0000-0000-0000-0000000000ff', kind: Kind.Grab }), 'QuestionNotFound'), 'unknown question -> QuestionNotFound');
-  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.Grab }), 'InvalidRound'), 'estimation question as Grab -> InvalidRound');
-  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.Battle, attackerId: anna.id, targetTerritoryIndex: 3 }), 'InvalidRound'), 'battle without a map/owner -> InvalidRound');
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab }), 'InvalidPhase'), 'Grab in the Lobby -> InvalidPhase');
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.BaseOrder }), 'InvalidPhase'), 'BaseOrder in the Lobby -> InvalidPhase');
   check(has(await host.rejects('CloseRound'), 'NoActiveRound'), 'CloseRound with no round -> NoActiveRound');
   check(has(await anna.hub.rejects('SubmitAnswer', { roundId: '00000000-0000-0000-0000-000000000001', option: 'A' }), 'NoActiveRound'), 'answer with no round -> NoActiveRound');
   check((await anna.hub.rejects('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab })) !== null, 'player cannot SendQuestion');
   check((await anna.hub.rejects('CloseRound')) !== null, 'player cannot CloseRound');
+
+  // ---- Phases: Lobby -> BaseSelection -> (base order round, picks) -> Conquest ----
+  await host.conn.invoke('StartGame');
+  await host.waitFor('PhaseChanged', (p) => p === 1);
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab }), 'InvalidPhase'), 'Grab in BaseSelection -> InvalidPhase');
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.Grab }), 'InvalidPhase'), 'estimation as Grab in BaseSelection -> InvalidPhase');
+
+  // ---- Estimation round: host closes early; non-answerer ranks last ----
+  host.events.length = 0;
+  await host.conn.invoke('SendQuestion', { questionId: DEMO_EST, kind: Kind.BaseOrder });
+  const est = (await anna.hub.waitFor('QuestionStarted', (q) => q.type === 1)).payload;
+  check(est.options.length === 0 && est.unit === 'm', 'estimation: no options, unit hint present');
+  await anna.hub.conn.invoke('SubmitAnswer', { roundId: est.roundId, number: 9000 });
+  await bela.hub.conn.invoke('SubmitAnswer', { roundId: est.roundId, number: 8800.5 });
+  check(has(await bela.hub.rejects('SubmitAnswer', { roundId: est.roundId, option: 'A' }), 'AlreadyAnswered'), 'second answer rejected for estimation too');
+  await host.conn.invoke('CloseRound');
+  const estClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === est.roundId)).payload;
+  check(estClosed.correctNumber === 8849, 'RoundClosed reveals the correct number');
+  check(estClosed.ranking.map((r) => r.name).join() === 'Bela,Anna,Cili', `closest first, non-answerer last (${estClosed.ranking.map((r) => r.name)})`);
+  check(Math.abs(estClosed.ranking[0].distance - 48.5) < 1e-9 && estClosed.ranking[2].distance == null, 'distances: 48.5 for Bela, none for Cili');
+  check(estClosed.winnerPlayerIds.length === 3 && estClosed.winnerPlayerIds[0] === bela.id, 'base order: everybody, closest first');
+
+  // The base-order result fixes the pick order; each player takes the first valid territory.
+  const byId = { [anna.id]: anna, [bela.id]: bela, [cili.id]: cili };
+  for (const pid of estClosed.winnerPlayerIds) {
+    const who = byId[pid];
+    const req = (await who.hub.waitFor('PickRequested')).payload;
+    await who.hub.conn.invoke('PickTerritory', req.validTerritoryIndices[0]);
+    await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.ownerPlayerId === pid && c.isBase));
+  }
+  await host.conn.invoke('AdvancePhase', 2);
+  await host.waitFor('PhaseChanged', (p) => p === 2);
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.Grab }), 'InvalidRound'), 'estimation question as Grab -> InvalidRound');
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.BaseOrder }), 'InvalidPhase'), 'BaseOrder in Conquest -> InvalidPhase');
+  check(has(await host.rejects('SendQuestion', { questionId: DEMO_EST, kind: Kind.Battle, attackerId: anna.id, targetTerritoryIndex: 47 }), 'InvalidRound'), 'battle on a free territory -> InvalidRound');
+
+  for (const x of [host, anna.hub, bela.hub, cili.hub]) x.events.length = 0;
 
   // ---- Multiple-choice round: all answer -> closes early ----
   const sentAt = Date.now();
@@ -149,7 +186,7 @@ try {
   await anna.hub.conn.start();
   const acceptedState = (await anna.hub.waitFor('RoomState')).payload;
   check(acceptedState.playerQuestion?.roundId === roundId && acceptedState.hasAnswered, 'accepted answer remains locked after reconnect');
-  check(acceptedState.hostQuestion == null && !JSON.stringify(acceptedState).includes('correctOption'), 'player reconnect snapshot does not leak the answer');
+  check(acceptedState.hostQuestion == null && !JSON.stringify([acceptedState.playerQuestion, acceptedState.currentRound]).includes('correctOption'), 'player reconnect snapshot does not leak the answer (a closed round\'s result may show it)');
   bela.hub.events.length = 0;
   await bela.hub.conn.invoke('Rejoin');
   const unansweredState = (await bela.hub.waitFor('RoomState')).payload;
@@ -180,21 +217,6 @@ try {
   const closedState = (await anna.hub.waitFor('RoomState')).payload;
   check(closedState.playerQuestion == null && closedState.lastRoundResult?.roundId === roundId,
     'rejoin after closure restores the last result');
-
-  // ---- Estimation round: host closes early; non-answerer ranks last ----
-  host.events.length = 0;
-  await host.conn.invoke('SendQuestion', { questionId: DEMO_EST, kind: Kind.BaseOrder });
-  const est = (await anna.hub.waitFor('QuestionStarted', (q) => q.type === 1)).payload;
-  check(est.options.length === 0 && est.unit === 'm', 'estimation: no options, unit hint present');
-  await anna.hub.conn.invoke('SubmitAnswer', { roundId: est.roundId, number: 9000 });
-  await bela.hub.conn.invoke('SubmitAnswer', { roundId: est.roundId, number: 8800.5 });
-  check(has(await bela.hub.rejects('SubmitAnswer', { roundId: est.roundId, option: 'A' }), 'AlreadyAnswered'), 'second answer rejected for estimation too');
-  await host.conn.invoke('CloseRound');
-  const estClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === est.roundId)).payload;
-  check(estClosed.correctNumber === 8849, 'RoundClosed reveals the correct number');
-  check(estClosed.ranking.map((r) => r.name).join() === 'Bela,Anna,Cili', `closest first, non-answerer last (${estClosed.ranking.map((r) => r.name)})`);
-  check(Math.abs(estClosed.ranking[0].distance - 48.5) < 1e-9 && estClosed.ranking[2].distance == null, 'distances: 48.5 for Bela, none for Cili');
-  check(estClosed.winnerPlayerIds.length === 3 && estClosed.winnerPlayerIds[0] === bela.id, 'base order: everybody, closest first');
 
   // ---- Rejoin mid-round, then the deadline timer closes the round on its own ----
   host.events.length = 0;

@@ -26,14 +26,18 @@
     <Compile Include="..\..\src\QuizGame.Host\Services\ApiClient.cs" Link="Host\Services\ApiClient.cs" />
     <Compile Include="..\..\src\QuizGame.Host\Services\IQuestionBankApi.cs" Link="Host\Services\IQuestionBankApi.cs" />
     <Compile Include="..\..\src\QuizGame.Host\Services\IQuestionBankDialogService.cs" Link="Host\Services\IQuestionBankDialogService.cs" />
+    <Compile Include="..\..\src\QuizGame.Host\Services\IRoomControlClient.cs" Link="Host\Services\IRoomControlClient.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\AsyncRelayCommand.cs" Link="Host\ViewModels\AsyncRelayCommand.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\CategoryManagerViewModel.cs" Link="Host\ViewModels\CategoryManagerViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\FilterChoice.cs" Link="Host\ViewModels\FilterChoice.cs" />
+    <Compile Include="..\..\src\QuizGame.Host\ViewModels\HostErrorFormatter.cs" Link="Host\ViewModels\HostErrorFormatter.cs" />
+    <Compile Include="..\..\src\QuizGame.Host\ViewModels\PhaseControlViewModel.cs" Link="Host\ViewModels\PhaseControlViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\QuestionBankViewModel.cs" Link="Host\ViewModels\QuestionBankViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\QuestionEditorViewModel.cs" Link="Host\ViewModels\QuestionEditorViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\QuestionItemViewModel.cs" Link="Host\ViewModels\QuestionItemViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\QuestionOptionViewModel.cs" Link="Host\ViewModels\QuestionOptionViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\RelayCommand.cs" Link="Host\ViewModels\RelayCommand.cs" />
+    <Compile Include="..\..\src\QuizGame.Host\ViewModels\RoomSettingsViewModel.cs" Link="Host\ViewModels\RoomSettingsViewModel.cs" />
     <Compile Include="..\..\src\QuizGame.Host\ViewModels\ViewModelBase.cs" Link="Host\ViewModels\ViewModelBase.cs" />
   </ItemGroup>
 

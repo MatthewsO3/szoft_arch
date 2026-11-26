@@ -59,6 +59,10 @@ export const ErrorCodes = Object.freeze({
   NoActiveRound: 'NoActiveRound',
   InvalidRound: 'InvalidRound',
   NotParticipant: 'NotParticipant',
+  InvalidTransition: 'InvalidTransition',
+  BaseSelectionIncomplete: 'BaseSelectionIncomplete',
+  NotYourPick: 'NotYourPick',
+  InvalidPick: 'InvalidPick',
 });
 
 // RoundKind / QuestionType are serialized as numbers (QuizGame.Contracts.RoundKind / QuestionType).

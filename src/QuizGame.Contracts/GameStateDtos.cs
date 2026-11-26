@@ -46,6 +46,17 @@ public sealed record CurrentRoundDto
 }
 
 /// <summary>
+/// The base pick that is waiting for a player (plan §4.2 BaseSelection). <see cref="ValidTerritoryIndices"/> is only
+/// filled for the picker's own snapshot and empty for everybody else.
+/// </summary>
+public sealed record CurrentPickDto
+{
+    public Guid PickerPlayerId { get; init; }
+    public DateTimeOffset PickDeadlineUtc { get; init; }
+    public IReadOnlyList<int> ValidTerritoryIndices { get; init; } = [];
+}
+
+/// <summary>
 /// Full room snapshot sent on (re)connect (plan §6.3 RoomState). The server's current
 /// UTC lets clients compute a clock offset for the countdown (plan §7.3).
 /// </summary>
@@ -57,6 +68,8 @@ public sealed record RoomStateDto
     public IReadOnlyList<PlayerSummary> Players { get; init; } = [];
     public MapDto? Map { get; init; }
     public CurrentRoundDto? CurrentRound { get; init; }
+    /// <summary>Base pick in progress during BaseSelection, otherwise null.</summary>
+    public CurrentPickDto? CurrentPick { get; init; }
     /// <summary>Caller-specific active question. Players must never receive HostQuestion.</summary>
     public QuestionForPlayer? PlayerQuestion { get; init; }
     public QuestionForHost? HostQuestion { get; init; }
