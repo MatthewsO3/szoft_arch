@@ -4,8 +4,15 @@ using QuizGame.Contracts;
 namespace QuizGame.Host.ViewModels;
 
 /// <summary>Row projection of <see cref="QuestionDto"/> for the question bank DataGrid.</summary>
-public sealed class QuestionItemViewModel
+public sealed class QuestionItemViewModel : ViewModelBase
 {
+    private bool _isSelectable = true;
+    public bool IsSelectable
+    {
+        get => _isSelectable;
+        set => Set(ref _isSelectable, value);
+    }
+
     public QuestionItemViewModel(QuestionDto model, string categoryName)
     {
         Model = model;
