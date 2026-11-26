@@ -84,7 +84,7 @@ export function createQuestion({ clock, send, recover, playerId }) {
       const own = data.ranking.find(row => row.playerId === playerId());
       document.getElementById('correct-answer').textContent = `Correct answer: ${data.correctOption ?? data.correctNumber ?? '—'}`;
       document.getElementById('personal-result').textContent = own
-        ? `Rank ${own.rank}${own.distance != null ? ` · Distance: ${own.distance}` : own.isCorrect != null ? own.isCorrect ? ' · Correct' : ' · Incorrect' : ' · No answer recorded'}${data.kind === RoundKind.BaseOrder ? ' · Base selection order' : data.winnerPlayerIds.includes(own.playerId) ? ' · Winner!' : ''}`
+        ? `Rank ${own.rank}${own.distance != null ? ` · Distance: ${own.distance}` : own.isCorrect != null ? own.isCorrect ? ' · Correct' : ' · Incorrect' : ' · No answer recorded'}${own.wonTerritoryIndex != null ? ' · Won a tile!' : own.bonusAwarded != null ? ` · +${own.bonusAwarded} bonus` : data.winnerPlayerIds.includes(own.playerId) ? ' · Winner!' : ''}`
         : 'No answer recorded for you this round.';
       const ranking = document.getElementById('round-ranking');
       ranking.replaceChildren();

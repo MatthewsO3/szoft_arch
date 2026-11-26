@@ -105,59 +105,53 @@ Game master (Játékmester), Player (Játékos), Room (Szoba), Map (Térkép), T
 ### 4.2 Phases (state machine)
 
 ```
-Lobby ──► BaseSelection ──► Conquest ──► Results
+Lobby ──► BaseSelection ──► Conquest ──► Expansion ──► Duel ──► Results
 ```
 
 Only the game master advances phases. Transitions are validated on the server (no skipping, no going back).
 
-Inside a phase, there is a **question round** sub-state machine:
-
-```
-Idle ──(GM sends question)──► QuestionOpen ──(deadline OR all answered OR GM closes)──► Evaluating
-  ▲                                                                                    │
-  │                                                              ┌─────────────────────┘
-  │                                                              ▼
-  └──(territory assigned / round finished)◄── AwaitingPick (if winner must choose a territory) 
-```
-
-`DECISION D1` – Phase rules in detail:
+Phase rules in detail:
 
 **Lobby**
 - Room exists with a 6-digit code. Players join with code + display name. Names are unique within a room (case-insensitive); duplicates are rejected.
-- Host can kick players. Host starts the game when at least 2 players are connected (configurable minimum).
+- Host can kick players. Host starts the game when at least `MinPlayers` are connected (default 2).
 
 **BaseSelection (bázisfoglalás)**
-- Map is generated according to player count (see 4.4).
-- The host sends **one estimation question** (fixed for this phase; the host can optionally resend if the result is a total tie).
-- Result: players are ranked by absolute distance to the correct number (ties broken by earlier server receive time). Players who did not answer rank last (in order of join).
-- In ranking order, each player picks **one free territory as their base** (player UI: map picker; "Terület választása"). The server enforces: territory free, not yet taken, and (optional rule) not adjacent to another base. A pick timeout (default 20 s) auto-assigns a random valid territory so the game cannot stall.
-- Base territories get a higher point value (`BaseValue`, default 300 vs. normal 100).
+- When the game starts the server generates the map (see 4.4) and fixes a **random turn order**.
+- In that turn order, each player picks **one free territory as their base** (player UI: map picker). The server enforces: territory free, not yet taken, and (optional rule) not adjacent to another base. A pick timeout (default 20 s) auto-assigns a random valid territory so the game cannot stall.
+- A base is worth `BaseValue` (default 300) and has `BaseHealth` hit points (default 3).
 
-**Conquest (hódítás)**
-Each round the host picks a question type:
-- **Multiple-choice round** (territory grab for *free* territories): the server ranks correct answers by server receive time. The fastest correct player becomes the *picker* and chooses a free territory that is **adjacent to a territory they already own** (or any free territory if they have none, e.g. their base was lost). `DECISION D2`: the number of winners per round is configurable (`WinnersPerRound`, default 1; with N winners, picks happen in order of speed).
-- **Estimation round as battle** (for *occupied* territories): the host selects (or the attacker nominates; `DECISION D3`: attacker nominates, host confirms) an attacker and a defender-owned territory adjacent to the attacker. Only attacker and defender receive the question; the closest guess wins the territory (ties → the defender keeps it).
+**Conquest (hódítás)** — runs `ConquestRounds` rounds (default 5), using the turn order:
+- **Claim stage:** each player in turn order claims **one** free tile. A claimed tile must be adjacent to a tile the player already owns; if none is reachable, any free tile. Players with no free tile left are skipped. Two players cannot claim the same tile (picks are sequential).
+- **Question:** once every claim is in, the host opens **one multiple-choice** question for all claimers at once.
+- **Resolve:** every player who answered correctly keeps the tile they claimed (a normal tile, value `TerritoryValue`, 1 health); a wrong or missing answer releases the claim.
+- The turn order then **rotates right** (1st → last) for the next round.
 
-Rule summary for ownership: at most one owner per territory; owner color shown on the map.
+**Expansion (terjeszkedés)** — fills the rest of the map:
+- The host opens **estimation** questions. The **closest guess** wins and picks one free tile (any free tile).
+- Repeats until no free tile remains, then the host advances to Duel.
 
-`DECISION D4` – **Conquest end condition**: host-controlled. The host ends Conquest manually, and the UI additionally suggests ending when all territories are owned or when a configured number of rounds (default 10) is reached.
+**Duel (csata)** — runs up to `DuelRounds` rounds (default 10), using the same rotating turn order:
+- The active player (front of the order) nominates a tile to attack; it must be owned by another player and adjacent to a tile the attacker owns. The host confirms and opens **one multiple-choice** question between attacker and defender only.
+- Resolution: **attacker correct** → the attack lands (see health below); **defender correct** → the defender keeps the tile and earns `DefenderBonus` (default 100); **both correct** → draw, no tile change, each earns `DrawBonus` (default 50); **neither** → nothing happens.
+- **Health:** a normal tile is taken on one successful hit; a base must be hit `BaseHealth` times (each hit reduces its health by one, captured on the last). A captured tile becomes a **normal** tile of the attacker. Losing your **last base** frees all of your tiles.
+- The turn order rotates right each round. The phase ends after `DuelRounds` rounds or when one player holds every base.
 
 **Results**
-- Final standings sorted by score; ties share a rank. Map shown in final state. Results persisted to the DB.
+- Final standings sorted by total score; ties share a rank. Map shown in final state. Results persisted to the DB.
 
 ### 4.3 Scoring
 
-- `Score(player) = Σ value(territory)` over owned territories at any time. It is **derived** from current ownership (not accumulated), so losing a territory immediately reduces score. This matches the glossary: *"Értéke hozzájárul a játékos pontszámához."*
+- `Score(player) = Σ value(territory)` over owned territories **plus** accumulated Duel bonus points (`DefenderBonus`, `DrawBonus`). The territory part is derived from current ownership (losing a tile reduces it immediately); the bonus part accumulates.
 - Value: base = `BaseValue` (300), normal = `TerritoryValue` (100). Both are room settings.
-- `DECISION D5`: no additional speed bonus points in v1 (speed only decides who wins the pick). Can be added later without model changes.
-- Tiebreak on final score: more territories, then earlier base-selection rank.
+- Tiebreak on final score: more territories, then earlier turn position, then join order.
 
 ### 4.4 Map
 
-`DECISION D6` – Square grid, 4-neighbour adjacency.
-- Size derived from player count: `cells ≈ max(24, players × 6)`, chosen as the nearest rectangular grid (e.g. 6×6 for ≤6 players, 6×8, 8×8, ...). Fixed presets keep it simple: `S 5×5`, `M 6×8`, `L 8×10`, host can override in room settings.
-- Cell id = `"r{row}c{col}"` or an integer index; neighbours computed by `MapService`.
-- Rendering is a plain grid of coloured rectangles (WPF `UniformGrid`/`Canvas`, web `<div>` grid or `<canvas>`). A hex or irregular "Honfoglaló"-like layout is a stretch goal (section 15); the model only needs `Territory { Id, Neighbours[] }` and is layout-agnostic.
+Square grid, 4-neighbour adjacency.
+- Size derived from player count (at least `MinCellsPerPlayer` cells per player). Fixed presets: `S 5×5`, `M 6×8`, `L 8×10`; the host can pick the preset, and a bigger grid is used automatically when a preset is too small.
+- Cell id = integer index (row-major); neighbours computed by `MapService`.
+- A tile carries `{ Value, IsBase, Health, OwnerId }`. Rendering is a plain grid of coloured rectangles; the model only needs `Territory { Index, Neighbours[] }` and is layout-agnostic.
 
 ### 4.5 Question types and evaluation
 
@@ -165,12 +159,12 @@ Rule summary for ownership: at most one owner per territory; owner color shown o
 |---|---|---|
 | Answer | one of A–D | a number (decimal allowed) |
 | Correct | exactly one option | one numeric value |
-| Winner | correct and fastest (server receive time) | smallest `|guess − correct|`; tie → earliest |
-| Used for | free-territory capture | base order, battles |
+| Used for | Conquest claims, Duels | Expansion picks |
+| Winner | each correct answerer keeps their claim (Conquest); correct/not per duellist (Duel) | smallest `\|guess − correct\|` picks a tile (Expansion); tie → earliest receive time |
 | Late answers | rejected | rejected |
-| Re-answer | allowed until deadline? **No**: first answer is final (`DECISION D7`) | same |
+| Re-answer | **No**: first answer is final | same |
 
-Pure functions in `Domain/Evaluation/` take `(question, answers[], deadline)` and return an ordered ranking; no I/O.
+Answer timing (server receive time) decides estimation ties; it does **not** decide Conquest or Duel outcomes (those are correct/not per player).
 
 ---
 
@@ -505,6 +499,7 @@ Everyone writes tests for their own part and reviews at least one other member's
 **M4 – Conquest and battles (~1 week)**
 - A: Multiple-choice grabs with adjacency rule, battle flow (nominate → confirm → duel), scoring.
 - C/D: battle UI on host, phone and projectors, scoreboard.
+- KNOWN ISSUE: TODO TO FIX IT: An unexpected error occured invoking SendQuestion on the server. HubException: PhaseNotComplete - we couldnt test the dual phase / not visible phase on the UI? 
 - **Exit criterion**: a full game to Results with correct scores.
 
 **M5 – Robustness and polish (~1 week)**

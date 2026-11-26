@@ -162,11 +162,8 @@ public sealed class MainViewModel : ViewModelBase
     {
         var selected = QuestionBank.SelectedQuestion ?? throw new InvalidOperationException("Select a question first.");
         ErrorMessage = "";
-        return _connection.SendQuestionAsync(new SendQuestionRequest
-        {
-            QuestionId = selected.Id,
-            Kind = selected.Type == QuestionType.MultipleChoice ? RoundKind.Grab : RoundKind.BaseOrder,
-        });
+        // The round kind follows the current phase (Conquest / Expansion / Duel), decided server-side.
+        return _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
     }
     public ICommand CopyRoomCodeCommand { get; }
 

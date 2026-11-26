@@ -32,12 +32,14 @@ public static class ErrorCodes
     // Phases and base selection (plan §4.2)
     public const string InvalidTransition = "InvalidTransition";
     public const string BaseSelectionIncomplete = "BaseSelectionIncomplete";
+    public const string PhaseNotComplete = "PhaseNotComplete";
     public const string NotYourPick = "NotYourPick";
     public const string InvalidPick = "InvalidPick";
 
-    // Conquest battles (plan §4.2, D3)
+    // Conquest claims and Duels (plan §4.2)
     public const string InvalidTarget = "InvalidTarget";
     public const string NoNomination = "NoNomination";
+    public const string NotYourTurn = "NotYourTurn";
 
     // Question bank (REST)
     public const string CategoryNotFound = "CategoryNotFound";

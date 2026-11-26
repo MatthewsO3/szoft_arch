@@ -19,11 +19,14 @@ public sealed class RoomSettingsViewModel : ViewModelBase
     private FilterChoice<MapPreset> _selectedMapPreset;
     private string _territoryValueText = "";
     private string _baseValueText = "";
-    private string _winnersPerRoundText = "";
+    private string _baseHealthText = "";
+    private string _conquestRoundsText = "";
+    private string _duelRoundsText = "";
+    private string _defenderBonusText = "";
+    private string _drawBonusText = "";
     private string _minPlayersText = "";
     private string _pickTimeoutSecondsText = "";
     private string _defaultQuestionSecondsText = "";
-    private string _suggestedMaxRoundsText = "";
     private bool _disallowAdjacentBases;
 
     private RoomSettings _appliedSettings = DefaultSettings;
@@ -103,8 +106,38 @@ public sealed class RoomSettingsViewModel : ViewModelBase
 
     public string WinnersPerRoundText
     {
-        get => _winnersPerRoundText;
-        set => SetFormField(ref _winnersPerRoundText, value);
+        get => _conquestRoundsText;
+        set => SetFormField(ref _conquestRoundsText, value);
+    }
+
+    public string ConquestRoundsText
+    {
+        get => _conquestRoundsText;
+        set => SetFormField(ref _conquestRoundsText, value);
+    }
+
+    public string DuelRoundsText
+    {
+        get => _duelRoundsText;
+        set => SetFormField(ref _duelRoundsText, value);
+    }
+
+    public string BaseHealthText
+    {
+        get => _baseHealthText;
+        set => SetFormField(ref _baseHealthText, value);
+    }
+
+    public string DefenderBonusText
+    {
+        get => _defenderBonusText;
+        set => SetFormField(ref _defenderBonusText, value);
+    }
+
+    public string DrawBonusText
+    {
+        get => _drawBonusText;
+        set => SetFormField(ref _drawBonusText, value);
     }
 
     public string MinPlayersText
@@ -127,8 +160,8 @@ public sealed class RoomSettingsViewModel : ViewModelBase
 
     public string SuggestedMaxRoundsText
     {
-        get => _suggestedMaxRoundsText;
-        set => SetFormField(ref _suggestedMaxRoundsText, value);
+        get => _duelRoundsText;
+        set => SetFormField(ref _duelRoundsText, value);
     }
 
     public bool DisallowAdjacentBases
@@ -207,9 +240,29 @@ public sealed class RoomSettingsViewModel : ViewModelBase
             error = "Base value must be a positive whole number.";
             return false;
         }
-        if (!TryParsePositiveInt(WinnersPerRoundText, out var winnersPerRound))
+        if (!TryParsePositiveInt(BaseHealthText, out var baseHealth))
         {
-            error = "Winners per round must be at least 1.";
+            error = "Base health must be at least 1.";
+            return false;
+        }
+        if (!TryParsePositiveInt(ConquestRoundsText, out var conquestRounds))
+        {
+            error = "Conquest rounds must be at least 1.";
+            return false;
+        }
+        if (!TryParsePositiveInt(DuelRoundsText, out var duelRounds))
+        {
+            error = "Duel rounds must be at least 1.";
+            return false;
+        }
+        if (!TryParseNonNegativeInt(DefenderBonusText, out var defenderBonus))
+        {
+            error = "Defender bonus must be zero or a positive whole number.";
+            return false;
+        }
+        if (!TryParseNonNegativeInt(DrawBonusText, out var drawBonus))
+        {
+            error = "Draw bonus must be zero or a positive whole number.";
             return false;
         }
         if (!TryParsePositiveInt(MinPlayersText, out var minPlayers))
@@ -227,22 +280,20 @@ public sealed class RoomSettingsViewModel : ViewModelBase
             error = "Default question time must be at least 1 second.";
             return false;
         }
-        if (!TryParsePositiveInt(SuggestedMaxRoundsText, out var suggestedMaxRounds))
-        {
-            error = "Suggested max rounds must be at least 1.";
-            return false;
-        }
 
         settings = new RoomSettings
         {
             MapPreset = SelectedMapPreset.Value,
             TerritoryValue = territoryValue,
             BaseValue = baseValue,
-            WinnersPerRound = winnersPerRound,
+            BaseHealth = baseHealth,
+            ConquestRounds = conquestRounds,
+            DuelRounds = duelRounds,
+            DefenderBonus = defenderBonus,
+            DrawBonus = drawBonus,
             MinPlayers = minPlayers,
             PickTimeoutSeconds = pickTimeoutSeconds,
             DefaultQuestionSeconds = defaultQuestionSeconds,
-            SuggestedMaxRounds = suggestedMaxRounds,
             DisallowAdjacentBases = DisallowAdjacentBases
         };
         error = "";
@@ -404,17 +455,25 @@ public sealed class RoomSettingsViewModel : ViewModelBase
         _selectedMapPreset = FindPreset(settings.MapPreset);
         _territoryValueText = settings.TerritoryValue.ToString(CultureInfo.InvariantCulture);
         _baseValueText = settings.BaseValue.ToString(CultureInfo.InvariantCulture);
-        _winnersPerRoundText = settings.WinnersPerRound.ToString(CultureInfo.InvariantCulture);
+        _baseHealthText = settings.BaseHealth.ToString(CultureInfo.InvariantCulture);
+        _conquestRoundsText = settings.ConquestRounds.ToString(CultureInfo.InvariantCulture);
+        _duelRoundsText = settings.DuelRounds.ToString(CultureInfo.InvariantCulture);
+        _defenderBonusText = settings.DefenderBonus.ToString(CultureInfo.InvariantCulture);
+        _drawBonusText = settings.DrawBonus.ToString(CultureInfo.InvariantCulture);
         _minPlayersText = settings.MinPlayers.ToString(CultureInfo.InvariantCulture);
         _pickTimeoutSecondsText = settings.PickTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         _defaultQuestionSecondsText = settings.DefaultQuestionSeconds.ToString(CultureInfo.InvariantCulture);
-        _suggestedMaxRoundsText = settings.SuggestedMaxRounds.ToString(CultureInfo.InvariantCulture);
         _disallowAdjacentBases = settings.DisallowAdjacentBases;
 
         Raise(nameof(SelectedMapPreset));
         Raise(nameof(TerritoryValueText));
         Raise(nameof(BaseValueText));
+        Raise(nameof(BaseHealthText));
         Raise(nameof(WinnersPerRoundText));
+        Raise(nameof(ConquestRoundsText));
+        Raise(nameof(DuelRoundsText));
+        Raise(nameof(DefenderBonusText));
+        Raise(nameof(DrawBonusText));
         Raise(nameof(MinPlayersText));
         Raise(nameof(PickTimeoutSecondsText));
         Raise(nameof(DefaultQuestionSecondsText));
@@ -448,6 +507,14 @@ public sealed class RoomSettingsViewModel : ViewModelBase
     private static bool TryParsePositiveInt(string? raw, out int value)
     {
         if (int.TryParse((raw ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 1)
+            return true;
+        value = 0;
+        return false;
+    }
+
+    private static bool TryParseNonNegativeInt(string? raw, out int value)
+    {
+        if (int.TryParse((raw ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0)
             return true;
         value = 0;
         return false;

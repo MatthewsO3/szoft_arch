@@ -160,6 +160,7 @@ public sealed class EfSessionRecorder(
                 row.Col = cell.Col;
                 row.Value = cell.Value;
                 row.IsBase = cell.IsBase;
+                row.Health = cell.Health;
                 row.OwnerPlayerId = cell.OwnerPlayerId;
             }
 

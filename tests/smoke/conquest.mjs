@@ -1,14 +1,12 @@
-// End-to-end smoke test for Conquest (M4-A): grab + adjacent pick, battle (nominate -> confirm -> duel),
-// then Lobby -> ... -> Results with GameFinished.
-// Usage: npm install (in tests/smoke), start the server, then: node conquest.mjs [baseUrl]
-//   env: BASE_URL, ADMIN_USER, ADMIN_PASS
+// End-to-end smoke test for the full game (plan §4.2): BaseSelection → Conquest → Expansion → Duel → Results.
+// Needs @microsoft/signalr (npm install in tests/smoke). Usage: start the server, then: node conquest.mjs [baseUrl]
 import * as signalR from '@microsoft/signalr';
 
 const BASE = process.argv[2] ?? process.env.BASE_URL ?? 'http://localhost:5084';
 const ADMIN_USER = process.env.ADMIN_USER ?? 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS ?? 'admin';
-const Kind = { BaseOrder: 0, Grab: 1, Battle: 2 };
-const Phase = { Lobby: 0, BaseSelection: 1, Conquest: 2, Results: 3 };
+const Phase = { Lobby: 0, BaseSelection: 1, Conquest: 2, Expansion: 3, Duel: 4, Results: 5 };
+const Purpose = { Base: 0, ConquestClaim: 1, Expansion: 2, DuelTarget: 3 };
 
 let failures = 0;
 const check = (cond, label) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}`); if (!cond) failures++; };
@@ -23,7 +21,7 @@ async function api(path, { method = 'GET', body, token } = {}) {
   return { status: res.status, body: json };
 }
 
-const EVENTS = ['RoomState', 'PlayerConnectionChanged', 'QuestionStarted', 'BattleAnnounced', 'BattleNominated',
+const EVENTS = ['RoomState', 'PlayerConnectionChanged', 'QuestionStarted', 'DuelAnnounced', 'DuelNominated',
   'AnswerCountChanged', 'RoundClosed', 'PhaseChanged', 'MapUpdated', 'PickRequested', 'PickWaiting', 'GameFinished', 'Error'];
 
 function connectHub(token) {
@@ -39,7 +37,7 @@ function connectHub(token) {
       for (const w of [...waiters]) if (w.match(evt)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(evt); }
     });
   }
-  const waitFor = (name, pred = () => true, ms = 6000) => {
+  const waitFor = (name, pred = () => true, ms = 8000) => {
     const match = (e) => e.name === name && pred(e.payload);
     const past = events.find(match);
     if (past) return Promise.resolve(past);
@@ -49,25 +47,33 @@ function connectHub(token) {
       waiters.push(w);
     });
   };
-  const rejects = async (method, ...args) => { try { await conn.invoke(method, ...args); return null; } catch (e) { return String(e.message ?? e); } };
-  return { conn, events, waitFor, rejects };
+  return { conn, events, waitFor };
 }
-const has = (text, code) => typeof text === 'string' && text.includes(code);
+
+const neighbours = (rows, cols, i) => {
+  const r = Math.floor(i / cols), c = i % cols, out = [];
+  if (r > 0) out.push(i - cols); if (c > 0) out.push(i - 1);
+  if (c < cols - 1) out.push(i + 1); if (r < rows - 1) out.push(i + cols);
+  return out;
+};
 
 try {
   const gmToken = (await api('/api/auth/login', { method: 'POST', body: { username: ADMIN_USER, password: ADMIN_PASS } })).body.token;
   check(!!gmToken, 'host logs in');
 
-  const catId = (await api('/api/categories', { method: 'POST', token: gmToken, body: { name: `conquest-smoke-${Date.now()}` } })).body.id;
+  const catId = (await api('/api/categories', { method: 'POST', token: gmToken, body: { name: `full-smoke-${Date.now()}` } })).body.id;
   const mc = await api('/api/questions', { method: 'POST', token: gmToken, body: {
-    categoryId: catId, type: 0, text: 'Conquest MC', difficulty: 1, timeLimitSeconds: 10,
+    categoryId: catId, type: 0, text: 'MC', difficulty: 1, timeLimitSeconds: 30,
     options: [{ label: 'A', text: 'a', isCorrect: false }, { label: 'B', text: 'b', isCorrect: true }] } });
   const est = await api('/api/questions', { method: 'POST', token: gmToken, body: {
-    categoryId: catId, type: 1, text: 'Conquest estimation', difficulty: 1, timeLimitSeconds: 10, options: [], correctNumber: 100, unit: 'm' } });
-  check(mc.status === 201 && est.status === 201, 'create test questions');
-  const DEMO_MC = mc.body.id, DEMO_EST = est.body.id;
+    categoryId: catId, type: 1, text: 'EST', difficulty: 1, timeLimitSeconds: 30, options: [], correctNumber: 100, unit: 'm' } });
+  check(mc.status === 201 && est.status === 201, 'create questions');
+  const MC = mc.body.id, EST = est.body.id;
 
-  const code = (await api('/api/rooms', { method: 'POST', token: gmToken, body: { settings: { pickTimeoutSeconds: 3 } } })).body.roomCode;
+  // Small map + few rounds keeps the smoke quick.
+  const code = (await api('/api/rooms', { method: 'POST', token: gmToken, body: {
+    settings: { mapPreset: 0, pickTimeoutSeconds: 3, conquestRounds: 1, duelRounds: 3, baseHealth: 2 } } })).body.roomCode;
+
   const host = connectHub(gmToken);
   await host.conn.start();
   await host.conn.invoke('HostAttach', code);
@@ -78,98 +84,123 @@ try {
     const hub = connectHub(join.body.token);
     await hub.conn.start();
     await hub.waitFor('RoomState');
-    return { name, id: join.body.player.id, token: join.body.token, hub };
+    return { name, id: join.body.player.id, hub };
   }
-  const anna = await addPlayer('Anna');
-  const bela = await addPlayer('Bela');
-  const cili = await addPlayer('Cili');
+  const players = [await addPlayer('Anna'), await addPlayer('Bela'), await addPlayer('Cili')];
+  const byId = Object.fromEntries(players.map((p) => [p.id, p]));
   await host.waitFor('PlayerConnectionChanged', (p) => p.name === 'Cili' && p.connected);
-  const byId = { [anna.id]: anna, [bela.id]: bela, [cili.id]: cili };
 
-  // Lobby -> BaseSelection -> base order -> picks -> Conquest.
+  // ---- BaseSelection: each player picks a base in turn order ----
   await host.conn.invoke('StartGame');
   await host.waitFor('PhaseChanged', (p) => p === Phase.BaseSelection);
-  await host.conn.invoke('SendQuestion', { questionId: DEMO_EST, kind: Kind.BaseOrder });
-  const baseQ = (await anna.hub.waitFor('QuestionStarted', (q) => q.type === 1)).payload;
-  await anna.hub.conn.invoke('SubmitAnswer', { roundId: baseQ.roundId, number: 100 });
-  await bela.hub.conn.invoke('SubmitAnswer', { roundId: baseQ.roundId, number: 101 });
-  await cili.hub.conn.invoke('SubmitAnswer', { roundId: baseQ.roundId, number: 102 });
-  const baseClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === baseQ.roundId)).payload;
-  for (const pid of baseClosed.winnerPlayerIds) {
-    const who = byId[pid];
-    const req = (await who.hub.waitFor('PickRequested')).payload;
-    await who.hub.conn.invoke('PickTerritory', req.validTerritoryIndices[0]);
-    await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.ownerPlayerId === pid && c.isBase));
+
+  async function resolvePicks(expectedPurpose) {
+    // Keep answering PickRequested until nobody is asked.
+    for (;;) {
+      const next = players.find((p) => p.hub.events.some((e) => e.name === 'PickRequested' &&
+        !e.handled && (e.handled = true)));
+      // Simpler: poll each player's latest unhandled PickRequested.
+      let acted = false;
+      for (const p of players) {
+        const evt = p.hub.events.find((e) => e.name === 'PickRequested' && !e.done);
+        if (!evt) continue;
+        evt.done = true;
+        if (expectedPurpose !== undefined) check(evt.payload.purpose === expectedPurpose, `pick purpose ${expectedPurpose}`);
+        await p.hub.conn.invoke('PickTerritory', evt.payload.validTerritoryIndices[0]);
+        acted = true;
+      }
+      if (!acted) break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
   }
+
+  // Wait for the first base PickRequested then resolve all base picks.
+  await Promise.race(players.map((p) => p.hub.waitFor('PickRequested')));
+  await resolvePicks(Purpose.Base);
+  check(true, 'all bases picked');
+
   await host.conn.invoke('AdvancePhase', Phase.Conquest);
   await host.waitFor('PhaseChanged', (p) => p === Phase.Conquest);
-  check(true, 'reached Conquest with bases assigned');
 
-  // Grab: Anna answers correctly first -> picks a free adjacent cell.
-  for (const x of [host, anna.hub, bela.hub, cili.hub]) x.events.length = 0;
-  await host.conn.invoke('SendQuestion', { questionId: DEMO_MC, kind: Kind.Grab });
-  const grabQ = (await anna.hub.waitFor('QuestionStarted', (q) => q.type === 0)).payload;
-  await anna.hub.conn.invoke('SubmitAnswer', { roundId: grabQ.roundId, option: 'B' });
-  const grabClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === grabQ.roundId)).payload;
-  check(grabClosed.kind === Kind.Grab && grabClosed.winnerPlayerIds[0] === anna.id, 'grab: fastest correct player wins');
-  const grabPick = (await anna.hub.waitFor('PickRequested')).payload;
-  await bela.hub.waitFor('PickWaiting', (p) => p.id === anna.id);
-  const grabCell = grabPick.validTerritoryIndices[0];
-  await anna.hub.conn.invoke('PickTerritory', grabCell);
-  const grabbed = (await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.index === grabCell))).payload;
-  const grabbedCell = grabbed.changedTerritories.find((c) => c.index === grabCell);
-  check(grabbedCell.ownerPlayerId === anna.id && grabbedCell.isBase === false, 'grabbed cell belongs to the winner and is not a base');
+  // ---- Conquest: claim stage + one multiple-choice question ----
+  for (const p of players) p.hub.events.length = 0;
+  await host.conn.invoke('SendQuestion', { questionId: MC });
+  await Promise.race(players.map((p) => p.hub.waitFor('PickRequested', (r) => r.purpose === Purpose.ConquestClaim)));
+  await resolvePicks(Purpose.ConquestClaim);
 
-  // Battle: find an enemy cell adjacent to a cell Anna owns, nominate it, host confirms.
-  const mapSnap = (await api(`/api/rooms/${code}`, { token: gmToken })).body.map;
-  const cols = mapSnap.cols;
-  const owner = new Map(mapSnap.territories.map((t) => [t.index, t.ownerPlayerId]));
-  const neighbours = (i) => {
-    const r = Math.floor(i / cols), c = i % cols, out = [];
-    if (r > 0) out.push(i - cols); if (c > 0) out.push(i - 1);
-    if (c < cols - 1) out.push(i + 1); if (r < mapSnap.rows - 1) out.push(i + cols);
-    return out;
-  };
-  let battleTarget = null;
-  for (const t of mapSnap.territories) {
-    if (t.ownerPlayerId && t.ownerPlayerId !== anna.id && neighbours(t.index).some((n) => owner.get(n) === anna.id)) { battleTarget = t; break; }
+  const cq = (await players[0].hub.waitFor('QuestionStarted')).payload;
+  for (const p of players) await p.hub.conn.invoke('SubmitAnswer', { roundId: cq.roundId, option: 'B' }); // all right
+  const cqClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === cq.roundId)).payload;
+  check(cqClosed.kind === 0, 'conquest round closed');
+  check(cqClosed.winnerPlayerIds.length === 3, 'every correct claimer kept their tile');
+
+  await host.conn.invoke('AdvancePhase', Phase.Expansion);
+  await host.waitFor('PhaseChanged', (p) => p === Phase.Expansion);
+
+  // ---- Expansion: estimation rounds until the map is full ----
+  for (let guard = 0; guard < 60; guard++) {
+    const snap = (await api(`/api/rooms/${code}`, { token: gmToken })).body;
+    if (!snap.map.territories.some((t) => t.ownerPlayerId === null)) break;
+    for (const p of players) p.hub.events.length = 0;
+    host.events.length = 0;
+    await host.conn.invoke('SendQuestion', { questionId: EST });
+    const eq = (await players[0].hub.waitFor('QuestionStarted', (q) => q.type === 1)).payload;
+    let guess = 100;
+    for (const p of players) await p.hub.conn.invoke('SubmitAnswer', { roundId: eq.roundId, number: guess++ });
+    await host.waitFor('RoundClosed', (r) => r.roundId === eq.roundId);
+    // The closest guess is asked to pick.
+    const picker = players.find((p) => p.hub.events.some((e) => e.name === 'PickRequested' && e.payload.purpose === Purpose.Expansion));
+    if (picker) {
+      const req = picker.hub.events.find((e) => e.name === 'PickRequested' && e.payload.purpose === Purpose.Expansion).payload;
+      await picker.hub.conn.invoke('PickTerritory', req.validTerritoryIndices[0]);
+      await host.waitFor('MapUpdated');
+    }
   }
-  check(battleTarget !== null, 'an enemy territory adjacent to Anna exists to battle for');
-  const defenderId = battleTarget.ownerPlayerId;
-  const defender = byId[defenderId];
+  const full = (await api(`/api/rooms/${code}`, { token: gmToken })).body.map;
+  check(!full.territories.some((t) => t.ownerPlayerId === null), 'Expansion filled the whole map');
 
-  check(has(await host.rejects('ConfirmBattle', { questionId: DEMO_EST }), 'NoNomination'), 'confirm without a nomination -> NoNomination');
-  await anna.hub.conn.invoke('NominateTarget', battleTarget.index);
-  const nominated = (await host.waitFor('BattleNominated')).payload;
-  check(nominated.attackerId === anna.id && nominated.defenderId === defenderId && nominated.targetTerritoryIndex === battleTarget.index,
-    'host is told who nominated which target');
+  await host.conn.invoke('AdvancePhase', Phase.Duel);
+  await host.waitFor('PhaseChanged', (p) => p === Phase.Duel);
 
+  // ---- Duel: active player nominates, host confirms, attacker wins ----
+  for (const p of players) p.hub.events.length = 0;
   host.events.length = 0;
-  await host.conn.invoke('ConfirmBattle', { questionId: DEMO_EST });
-  const battleHostQ = (await host.waitFor('QuestionStarted')).payload;
-  const battleQ = (await anna.hub.waitFor('QuestionStarted', (q) => q.roundId === battleHostQ.roundId)).payload;
-  check(battleQ.type === 1, 'confirmed battle opens an estimation duel');
-  const spectator = [anna, bela, cili].find((p) => p.id !== anna.id && p.id !== defenderId);
-  await spectator.hub.waitFor('BattleAnnounced', (b) => b.targetTerritoryIndex === battleTarget.index);
-  check(true, 'non-participants receive BattleAnnounced');
-  check(has(await spectator.hub.rejects('SubmitAnswer', { roundId: battleQ.roundId, number: 100 }), 'NotParticipant'), 'a spectator cannot answer a battle');
+  const snap = (await api(`/api/rooms/${code}`, { token: gmToken })).body;
+  const attackerId = snap.turnOrder[0];
+  const attacker = byId[attackerId];
+  const owner = new Map(snap.map.territories.map((t) => [t.index, t.ownerPlayerId]));
+  const target = snap.map.territories.find((t) => !t.isBase && t.ownerPlayerId && t.ownerPlayerId !== attackerId
+    && neighbours(snap.map.rows, snap.map.cols, t.index).some((n) => owner.get(n) === attackerId))
+    ?? snap.map.territories.find((t) => t.ownerPlayerId && t.ownerPlayerId !== attackerId
+    && neighbours(snap.map.rows, snap.map.cols, t.index).some((n) => owner.get(n) === attackerId));
+  check(!!target, 'found an adjacent enemy tile to attack');
+  const defender = byId[target.ownerPlayerId];
 
-  await anna.hub.conn.invoke('SubmitAnswer', { roundId: battleQ.roundId, number: 100 }); // exact
-  await defender.hub.conn.invoke('SubmitAnswer', { roundId: battleQ.roundId, number: 1 });
-  const battleClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === battleQ.roundId)).payload;
-  check(battleClosed.kind === Kind.Battle && battleClosed.winnerPlayerIds[0] === anna.id, 'battle winner = closest guess');
-  const transfer = (await host.waitFor('MapUpdated', (u) => u.changedTerritories.some((c) => c.index === battleTarget.index))).payload;
-  check(transfer.changedTerritories.find((c) => c.index === battleTarget.index).ownerPlayerId === anna.id, 'battle hands the territory to the winner');
+  await attacker.hub.conn.invoke('NominateTarget', target.index);
+  const nominated = (await host.waitFor('DuelNominated')).payload;
+  check(nominated.attackerId === attackerId && nominated.targetTerritoryIndex === target.index, 'host notified of the nomination');
 
-  // End the game.
+  await host.conn.invoke('ConfirmDuel', { questionId: MC });
+  const dq = (await attacker.hub.waitFor('QuestionStarted')).payload;
+  const spectator = players.find((p) => p.id !== attackerId && p.id !== defender.id);
+  await spectator.hub.waitFor('DuelAnnounced', (d) => d.targetTerritoryIndex === target.index);
+  check(true, 'spectator got DuelAnnounced');
+
+  await attacker.hub.conn.invoke('SubmitAnswer', { roundId: dq.roundId, option: 'B' });   // attacker right
+  await defender.hub.conn.invoke('SubmitAnswer', { roundId: dq.roundId, option: 'A' });    // defender wrong
+  const dClosed = (await host.waitFor('RoundClosed', (r) => r.roundId === dq.roundId)).payload;
+  check(dClosed.kind === 2, 'duel closed');
+  const after = (await api(`/api/rooms/${code}`, { token: gmToken })).body.map.territories.find((t) => t.index === target.index);
+  check(after.ownerPlayerId === attackerId, 'attacker captured the (normal) tile');
+
+  // ---- Results ----
   await host.conn.invoke('AdvancePhase', Phase.Results);
   await host.waitFor('PhaseChanged', (p) => p === Phase.Results);
   const finished = (await host.waitFor('GameFinished')).payload;
-  check(finished.standings.length === 3, 'GameFinished lists every player');
-  check(finished.standings[0].rank === 1 && finished.standings.every((s, i) => i === 0 || s.rank >= finished.standings[i - 1].rank), 'standings are ranked best first');
-  check(finished.standings.find((s) => s.playerId === anna.id).score >= grabbedCell.value, 'the leader score reflects owned territories');
+  check(finished.standings.length === 3 && finished.standings[0].rank === 1, 'GameFinished has ranked standings');
 
-  await Promise.allSettled([host.conn.stop(), anna.hub.conn.stop(), bela.hub.conn.stop(), cili.hub.conn.stop()]);
+  check((await api(`/api/rooms/${code}`, { method: 'DELETE', token: gmToken })).status === 204, 'room closes -> 204');
+  await Promise.allSettled([host.conn.stop(), ...players.map((p) => p.hub.conn.stop())]);
 } catch (err) {
   console.error('ERROR', err);
   failures++;

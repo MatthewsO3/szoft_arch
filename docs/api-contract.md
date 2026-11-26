@@ -65,13 +65,13 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `KickPlayer` | GM | `playerId` | Remove a player |
 | `UpdateSettings` | GM | `RoomSettings` | Lobby only; `InvalidPhase` afterwards, `InvalidSettings` for out-of-range values (§6) |
 | `StartGame` | GM | – | Lobby → BaseSelection; generates the map and pushes `PhaseChanged` + `RoomState` + `MapUpdated` (§6) |
-| `AdvancePhase` | GM | `GamePhase targetPhase` | Validated transition (no skip/back): BaseSelection → Conquest needs all bases picked, Conquest → Results ends the game (§6) |
-| `SendQuestion` | GM | `SendQuestionRequest` | Opens a round |
+| `AdvancePhase` | GM | `GamePhase targetPhase` | Validated transition (no skip/back): BaseSelection → Conquest (all bases picked), Conquest → Expansion, Expansion → Duel (map full), Duel → Results (§6, §7) |
+| `SendQuestion` | GM | `SendQuestionRequest { questionId }` | Opens the round for the current phase: Conquest (claim stage + MC), Expansion (estimation), Duel (confirms the nomination; use `ConfirmDuel`) (§7) |
 | `CloseRound` | GM | – | Ends the current round early |
-| `ConfirmBattle` | GM | `ConfirmBattleRequest { questionId }` | Confirms a pending nomination and opens the battle with that estimation question (D3, §7) |
-| `SubmitAnswer` | Player | `SubmitAnswerRequest` | Returns `AnswerAccepted { roundId }` after recording an answer (first is final, D7) |
-| `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker; base selection and Conquest grabs (§6, §7) |
-| `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target; the host is told via `BattleNominated` (D3, §7) |
+| `ConfirmDuel` | GM | `ConfirmDuelRequest { questionId }` | Confirms a pending nomination and opens the duel with that multiple-choice question (§7) |
+| `SubmitAnswer` | Player | `SubmitAnswerRequest` | Returns `AnswerAccepted { roundId }` after recording an answer (first is final) |
+| `PickTerritory` | Player | `int territoryIndex` | The current picker chooses a tile: base, Conquest claim or Expansion pick (§6, §7) |
+| `NominateTarget` | Player | `int territoryIndex` | The active Duel player nominates a target; the host is told via `DuelNominated` (§7) |
 | `Rejoin` | Player/GM | – | Re-attach after disconnect; server replies with `RoomState` |
 | `LeaveRoom` | Player | – | Player leaves voluntarily; room gets `PlayerLeft` |
 | `Ping` | any | – | Latency / keepalive / clock sync |
@@ -87,14 +87,14 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `PhaseChanged` | room | `GamePhase` |
 | `MapUpdated` | room | `MapUpdate` (changed cells + scoreboard) |
 | `QuestionStarted` | gm group | `QuestionForHost { roundId, question: QuestionDto, serverDeadlineUtc }` (includes correct answer) |
-| `QuestionStarted` | players group | `QuestionForPlayer` (no correct answer); battle → only the two players |
-| `BattleAnnounced` | non-participants | `BattleAnnouncement` |
-| `BattleNominated` | gm group | `BattleNominationDto { attackerId, defenderId, targetTerritoryIndex }` (awaiting the host's `ConfirmBattle`, D3) |
+| `QuestionStarted` | players group | `QuestionForPlayer` (no correct answer); Conquest → only the claimers; Duel → only the two players |
+| `DuelAnnounced` | non-participants | `DuelAnnouncement { attackerId, defenderId, targetTerritoryIndex }` |
+| `DuelNominated` | gm group | `DuelNominationDto { attackerId, defenderId, targetTerritoryIndex }` (awaiting the host's `ConfirmDuel`) |
 | `AnswerCountChanged` | gm group | `AnswerCount` |
-| `RoundClosed` | room | `RoundClosedDto` (ranking + correct answer + winners) |
-| `PickRequested` | the picker | `PickRequest` |
+| `RoundClosed` | room | `RoundClosedDto` (ranking + correct answer + winners; per-row `wonTerritoryIndex` / `bonusAwarded`) |
+| `PickRequested` | the picker | `PickRequest { validTerritoryIndices, pickDeadlineUtc, purpose }` |
 | `PickWaiting` | others | `PlayerSummary` (who is choosing) |
-| `ScoreboardUpdated` | room | `ScoreEntry[]` |
+| `ScoreboardUpdated` | room | `ScoreEntry[]` (Duel bonus with no cell change) |
 | `GameFinished` | room | `GameFinishedDto` |
 | `Kicked` | the kicked player | – (client should drop its session) |
 | `RoomClosed` | room | – (host closed the room or it was idle too long) |
@@ -119,8 +119,10 @@ Initial set; extend as needed and keep in sync with the client:
 | `AnswerTooLate` | Received after deadline + grace |
 | `AlreadyAnswered` | Second answer rejected (first is final) |
 | `NotYourPick` | `PickTerritory` from someone who isn't the picker (also: no pick is pending, or the pick timed out) |
-| `InvalidPick` | Territory not in the picker's valid list (taken, out of range, or next to a base when `DisallowAdjacentBases`) |
-| `BaseSelectionIncomplete` | `AdvancePhase(Conquest)` before the base-order round was played and every player picked |
+| `InvalidPick` | Territory not in the picker's valid list (taken, out of range, not adjacent, or next to a base when `DisallowAdjacentBases`) |
+| `BaseSelectionIncomplete` | `AdvancePhase(Conquest)` before every player has picked a base |
+| `PhaseNotComplete` | `AdvancePhase(Duel)` before Expansion filled the map; or a round for a phase whose round budget is used up |
+| `NotYourTurn` | `NominateTarget` from a player who is not the active Duel player |
 | `NotEnoughPlayers` | StartGame below `MinPlayers` |
 | `InvalidCredentials` | Wrong username / password (REST 401) |
 | `PlayerNotFound` | Player is not (or no longer) in the room, e.g. kicked |
@@ -130,13 +132,13 @@ Initial set; extend as needed and keep in sync with the client:
 | `InvalidSettings` | `RoomSettings` value out of range (REST 400) |
 | `NotAttached` | Hub method needs `HostAttach` / a joined room first |
 | `QuestionNotFound` | No active question with the given id (REST 404; `SendQuestion` over the hub) |
-| `RoundInProgress` | `SendQuestion` while another round is open or a territory pick is still waiting; `AdvancePhase(Results)` while a grab pick is pending |
+| `RoundInProgress` | `SendQuestion` while a round or a territory pick is still in progress |
 | `NoActiveRound` | `CloseRound` / `SubmitAnswer` with no open round, or for a round that is not the open one |
-| `InvalidRound` | Kind does not fit the question type (Grab = multiple choice, BaseOrder/Battle = estimation), malformed question, or an invalid battle (no attacker/target, target has no owner, own territory) |
+| `InvalidRound` | Kind does not fit the question type (Conquest/Duel = multiple choice, Expansion = estimation) or a malformed question |
 | `InvalidAnswer` | Missing/unknown option (multiple choice) or missing number (estimation) |
-| `NotParticipant` | The player is not part of this round (battle: only attacker and defender) |
+| `NotParticipant` | The player is not part of this round (Conquest: only claimers; Duel: only attacker and defender) |
 | `InvalidTarget` | `NominateTarget` on a free, own, non-existent or non-adjacent territory |
-| `NoNomination` | `ConfirmBattle` with no pending nomination (it was never made, or the involved player left) |
+| `NoNomination` | `ConfirmDuel` with no pending nomination (it was never made, or the involved player left) |
 | `CategoryNotFound` | No category with the given id (REST 404) |
 | `CategoryNameTaken` | A category with that name already exists (REST 409) |
 | `CategoryInUse` | Category still has questions; cannot be deleted (REST 409) |
@@ -161,12 +163,12 @@ Initial set; extend as needed and keep in sync with the client:
 
 ## 5. Question rounds
 
-- **Opening:** `SendQuestion` works while no round is open. Kind ↔ type: `Grab` needs a multiple-choice question,
-  `BaseOrder` and `Battle` an estimation question. Phase gating: `BaseOrder` only in BaseSelection (and only once),
-  `Grab` / `Battle` only in Conquest, otherwise `InvalidPhase`. A battle's defender is the owner of the target territory.
+- **Opening:** `SendQuestion { questionId }` works while no round and no pick is in progress. The server picks the kind from
+  the phase: Conquest → multiple choice (claim stage first), Expansion → estimation, Duel → multiple choice (via `ConfirmDuel`).
+  A question of the wrong type for the phase is `InvalidRound`; the wrong phase is `InvalidPhase`.
 - **Who receives what:** host group → `QuestionStarted` with `QuestionForHost` (round ID, deadline, full question including correct answer) plus
   `AnswerCountChanged(0, n)`; players → `QuestionStarted` with `QuestionForPlayer` (options only, no text, no correct
-  answer, `ServerDeadlineUtc`). Battle: only attacker and defender get the question, everybody else `BattleAnnounced`.
+  answer, `ServerDeadlineUtc`). Conquest: only the claimers get it. Duel: only attacker and defender get it, everybody else `DuelAnnounced`.
 - **Round id:** both question payloads carry `RoundId`; the host also receives the authoritative deadline.
 - **Deadline:** `ServerDeadlineUtc = start + question.TimeLimitSeconds` (room default if 0). Answers are accepted up to
   deadline + 300 ms (`Rounds:GraceMilliseconds`), later ones get `AnswerTooLate`. Receive time is stamped by the server.
@@ -175,12 +177,12 @@ Initial set; extend as needed and keep in sync with the client:
 - **Closing:** the round closes at deadline + grace, when every *connected* participant has answered, or when the host calls
   `CloseRound` (offline or removed players do not hold it open). Exactly one `RoundClosed` is sent to the whole room.
 - **Ranking (`RoundClosedDto.Ranking`, ranks 1..n):**
-  - Multiple choice: correct answers by receive time, then wrong answers, then non-answerers (join order).
-    `WinnerPlayerIds` = first `WinnersPerRound` correct players (empty if nobody was correct).
-  - Estimation: smallest `Distance` first, ties by earlier receive time, non-answerers last (join order).
-    `BaseOrder` → `WinnerPlayerIds` lists everybody in ranking order (the pick order). `IsCorrect` = exact hit.
-  - Battle: same distance ranking, but a tie goes to the defender; `WinnerPlayerIds` has one entry.
-    The defender is the owner of the target territory (needs the map, M3).
+  - Conquest: every claimer in turn order; `IsCorrect` per player, `WonTerritoryIndex` set for those who kept their claim.
+    `WinnerPlayerIds` = the players who kept a tile.
+  - Expansion: smallest `Distance` first, ties by earlier receive time, non-answerers last. `WinnerPlayerIds` = the closest
+    answerer (who then picks a tile), or empty if nobody answered.
+  - Duel: attacker then defender, each with `IsCorrect` and any `BonusAwarded`. `WinnerPlayerIds` = the attacker if they
+    captured the tile, otherwise empty.
 - **Reconnect:** `RoomState` includes a caller-specific `PlayerQuestion` or `HostQuestion`, `HasAnswered` for the caller, and host-only `AnswerCount`. `LastRoundResult` restores missed results. The active question takes precedence. Snapshots and round events are serialized per room to preserve delivery order.
 - **Persistence:** on close the `Rounds` row and its `Answers` rows are written in one transaction (players without an
   answer have no `Answers` row). History write failures are logged and never affect the game.
@@ -190,9 +192,8 @@ Initial set; extend as needed and keep in sync with the client:
   Rejections throw `HubException` with a stable code. Unknown transport failures keep input locked until
   a fresh snapshot confirms whether an answer was recorded. No correct answers are sent to players
   before closure; host snapshots are never broadcast to players.
-- **Host controls:** select a row in the question bank and use **Send selected question**. Multiple-choice
-  questions open a Grab round; estimation questions open a BaseOrder round. **Close round** closes early.
-  Conquest grabs, battles and phase gating are covered in §7.
+- **Host controls:** `SendQuestion { questionId }` opens the round for the current phase; the server picks the kind from
+  the phase. **Close round** closes early. The full per-phase flow is in §7.
 
 ---
 
@@ -201,62 +202,52 @@ Initial set; extend as needed and keep in sync with the client:
 - **Settings:** `UpdateSettings(RoomSettings)` in the Lobby only (the host may call it repeatedly; no event is pushed, the
   caller's success is the confirmation). Ranges as in `POST /rooms`: values > 0, `MinPlayers` ≥ 1, `MapPreset` a defined value.
 - **Starting:** `StartGame` needs at least `MinPlayers` *connected* players (`NotEnoughPlayers`). The server generates the map,
-  moves to BaseSelection and sends, in this order: `PhaseChanged(BaseSelection)` to the room, a fresh `RoomState` to every
-  connection (each with its own view), and one `MapUpdated` that carries **all** cells for the first time.
-  `AdvancePhase(BaseSelection)` from the Lobby does the same. Nobody can join after the start (`NotInLobby`).
+  fixes a **random turn order**, moves to BaseSelection and sends, in this order: `PhaseChanged(BaseSelection)`, a fresh
+  `RoomState` to every connection (each with its own view, including `TurnOrder`), one `MapUpdated` with **all** cells, then
+  `PickRequested` to the first player. `AdvancePhase(BaseSelection)` from the Lobby does the same. Nobody can join after the start (`NotInLobby`).
 - **Map:** square grid, 4-neighbour adjacency, row-major `Index = Row × Cols + Col`. Presets: Small 5×5, Medium 6×8, Large 8×10.
   The preset is a minimum: with fewer than 3 cells per player the next preset is used (beyond Large a square grid that fits).
-  `RoomState.Map` has the dimensions; `MapUpdated` only carries changed cells, so a client that wants the grid size reads it
-  from `RoomState` (it is also sent right after `StartGame`). A normal territory is worth `TerritoryValue`, a base `BaseValue`.
-- **Score:** `Σ value` of the owned territories, derived. `MapUpdate.Scoreboard` and `RoomState.Scoreboard` are sorted by
-  score, then territory count, then earlier base rank, then join order.
-- **Base order:** in BaseSelection the host sends **one** estimation question with kind `BaseOrder`. When it closes, the
-  `WinnerPlayerIds` of `RoundClosed` are everybody in ranking order and `PlayerSummary.BaseRank` (1-based) is set. The round
-  can be played only once.
-- **Picking:** right after `RoundClosed` the first player is asked, then the next one after each pick. The picker gets
-  `PickRequested { ValidTerritoryIndices, PickDeadlineUtc }`, everybody else (host, projector, other players) gets
-  `PickWaiting(PlayerSummary of the picker)`. The valid cells are all free territories, or with `DisallowAdjacentBases`
-  those that touch no base (if that leaves nothing, the rule is dropped for that pick). The picker answers with
-  `PickTerritory(index)`; errors: `NotYourPick`, `InvalidPick`. Every assignment is announced with `MapUpdated`
-  (changed cell: `OwnerPlayerId`, `IsBase = true`, `Value = BaseValue`, plus the scoreboard).
+  `RoomState.Map` has the dimensions; `MapUpdated` only carries changed cells. A normal territory is worth `TerritoryValue` with
+  1 health; a base is worth `BaseValue` with `BaseHealth` health.
+- **Score:** `Σ value` of owned territories **plus** accumulated Duel bonus. `MapUpdate.Scoreboard` and `RoomState.Scoreboard`
+  are sorted by score, then territory count, then turn position, then join order.
+- **Base selection:** in turn order each player is asked `PickRequested { ValidTerritoryIndices, PickDeadlineUtc, Purpose = Base }`;
+  everybody else gets `PickWaiting(picker)`. The picker answers `PickTerritory(index)` (errors `NotYourPick` / `InvalidPick`). Valid
+  cells are all free tiles, or with `DisallowAdjacentBases` those touching no base (dropped if that leaves nothing). Each assignment
+  is announced with `MapUpdated` (`IsBase = true`, `Value = BaseValue`, `Health = BaseHealth`).
 - **Timeout:** after `PickTimeoutSeconds` the server assigns a random valid territory (also for offline players) and moves on;
-  a pick that arrives afterwards gets `NotYourPick`. When the last player has a base no further event is needed: the host sees
-  the last `MapUpdated` and moves on with `AdvancePhase(Conquest)`.
-- **Reconnect:** `RoomState.CurrentPick { PickerPlayerId, PickDeadlineUtc, ValidTerritoryIndices }` — the valid cells are only
-  filled for the picker. After the `RoomState` the server also resends `PickRequested` / `PickWaiting` to the reconnecting connection.
-- **Players leaving:** a kicked or leaving player's territories become free again (`MapUpdated`), and if it was their turn
-  the next player is asked.
-- **Phase changes:** `AdvancePhase(Conquest)` needs the base-order round played, no round open and no pick pending
-  (`BaseSelectionIncomplete` / `RoundInProgress`). `AdvancePhase(Results)` is only allowed from Conquest with no round
-  open; it sends `PhaseChanged(Results)` and `GameFinished { Standings, FinalMap }` (equal scores share a rank).
-  Everything else is `InvalidTransition`. `PhaseChanged` goes to the whole room.
+  a pick that arrives afterwards gets `NotYourPick`.
+- **Reconnect:** `RoomState.CurrentPick { PickerPlayerId, PickDeadlineUtc, ValidTerritoryIndices, Purpose }` — the valid cells are
+  only filled for the picker. After the `RoomState` the server resends `PickRequested` / `PickWaiting` to the reconnecting connection.
+- **Players leaving:** a kicked or leaving player's territories become free again (`MapUpdated`), they are removed from the turn
+  order, and if it was their turn the next player is asked.
+- **Phase changes:** `AdvancePhase(Conquest)` needs every base picked, no round and no pick pending
+  (`BaseSelectionIncomplete` / `RoundInProgress`). `AdvancePhase(Expansion)` needs no round/pick. `AdvancePhase(Duel)` needs the
+  map full (`PhaseNotComplete` otherwise). `AdvancePhase(Results)` sends `PhaseChanged(Results)` and
+  `GameFinished { Standings, FinalMap }` (equal scores share a rank). Everything else is `InvalidTransition`.
 - **Persistence:** the cells of the map are stored in `Territories` (all at the start, then the changed ones); history write
   failures are logged and never affect the game.
 
 ---
 
-## 7. Conquest: grabs and battles (M4)
+## 7. Conquest, Expansion and Duel
 
-- **Grab round:** in Conquest the host sends a **multiple-choice** question with kind `Grab`. On close, the
-  `WinnersPerRound` fastest correct players (plan §4.2, D2) become pickers, fastest first. Each winner gets
-  `PickRequested { ValidTerritoryIndices, PickDeadlineUtc }`; everybody else gets `PickWaiting(picker)`. The valid cells
-  are the **free territories adjacent to a territory the winner already owns**, or — if the winner owns none (e.g. their
-  base was lost) — **any free territory**. The pick uses the same `PickTerritory(index)` method and the same
-  `PickTimeoutSeconds` auto-assignment as base selection, but the assigned cell is a **normal** territory
-  (`IsBase = false`, `Value = TerritoryValue`), broadcast with `MapUpdated`. The next winner is asked after each pick.
-- **A pick blocks the next action:** while a grab pick is pending, `SendQuestion` returns `RoundInProgress` and
-  `AdvancePhase(Results)` returns `RoundInProgress`. Finish the pick (or let it time out) first.
-- **Battle nomination (D3):** in Conquest, with no round open, an attacker calls `NominateTarget(territoryIndex)`. The
-  target must be **owned by another player** and **adjacent to a territory the attacker owns**, else `InvalidTarget`
-  (`NominateTarget` outside Conquest → `InvalidPhase`; while a round is open → `RoundInProgress`). The host receives
-  `BattleNominated { attackerId, defenderId, targetTerritoryIndex }`. A new nomination overwrites the previous one; a
-  nomination is dropped if the attacker or defender leaves.
-- **Battle confirmation:** the host calls `ConfirmBattle { questionId }` with an **estimation** question. It consumes the
-  pending nomination (`NoNomination` if there is none) and opens a `Battle` round between attacker and defender only; the
-  two get `QuestionStarted`, everybody else `BattleAnnounced`. The host may also open a battle directly with
-  `SendQuestion` carrying `AttackerId` + `TargetTerritoryIndex`.
-- **Battle result:** closest guess wins (plan §4.5); a tie (or nobody closer than the defender) keeps the **defender**.
-  If the attacker wins, the contested territory's owner changes (a captured base keeps its base value) and the change is
-  broadcast with `MapUpdated`; if the defender keeps it, nothing on the map changes. Scores are derived from current
-  ownership (plan §4.3), so they update with every `MapUpdated`.
+- **Conquest (claim + question):** the host calls `SendQuestion { questionId }` with a **multiple-choice** question. The server
+  first runs a **claim stage**: each player in turn order gets `PickRequested { …, Purpose = ConquestClaim }` and claims one free
+  tile (adjacent to one they own, else any free; skipped if none). A claim does **not** take ownership. Once every claim is in,
+  the server opens the question to the claimers (`QuestionStarted`). On close, every claimer who answered correctly gets their
+  claimed tile (normal, 1 health) via `MapUpdated`; wrong/missing answers release the claim. The turn order rotates right. The
+  phase allows `ConquestRounds` rounds; a further `SendQuestion` after that returns `PhaseNotComplete`.
+- **Expansion (estimation):** `SendQuestion { questionId }` with an **estimation** question opens one round for everyone. On close
+  the closest guess gets `PickRequested { …, Purpose = Expansion }` and takes a free tile. Repeat until the map is full, then
+  `AdvancePhase(Duel)`. `SendQuestion` with the map already full returns `PhaseNotComplete`.
+- **Duel (nominate → confirm → duel):** the active player (front of the turn order) calls `NominateTarget(index)` — an enemy tile
+  adjacent to one they own (`NotYourTurn` / `InvalidTarget` otherwise). The host receives `DuelNominated` and calls
+  `ConfirmDuel { questionId }` with a **multiple-choice** question (`NoNomination` if none pending). Only attacker and defender get
+  the question; everybody else gets `DuelAnnounced`. On close: **attacker correct** → the attack lands (`MapUpdated`); **defender
+  correct** → defender keeps the tile and `+DefenderBonus`; **both** → draw, no tile change, each `+DrawBonus` (`ScoreboardUpdated`);
+  **neither** → nothing. A base takes `BaseHealth` hits (health drops by one per hit, shown on `TerritoryDto.Health`); a captured
+  tile becomes a normal tile; losing a last base frees all of that player's tiles. The turn order rotates right each round; the
+  phase allows `DuelRounds` rounds.
 
+---

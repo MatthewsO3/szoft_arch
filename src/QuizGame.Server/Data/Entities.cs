@@ -137,5 +137,9 @@ public sealed class TerritoryEntity
     public int Col { get; set; }
     public int Value { get; set; }
     public bool IsBase { get; set; }
+
+    /// <summary>Remaining hit points: a base starts at the room's BaseHealth, a normal territory is 1 (plan §4.2 Duel).</summary>
+    public int Health { get; set; } = 1;
+
     public Guid? OwnerPlayerId { get; set; }
 }

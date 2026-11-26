@@ -32,7 +32,7 @@ public sealed class QuestionViewModel : ViewModelBase, IDisposable
         $"{row.Rank}. {row.Name}" +
         (row.Distance is { } distance ? $" — distance {distance}" : row.ElapsedMs is { } elapsed ? $" — {elapsed} ms" : "") +
         (row.IsCorrect is null && row.Distance is null ? " — no answer" : "") +
-        (_result.Kind == RoundKind.BaseOrder ? " — base selection order" : _result.WinnerPlayerIds.Contains(row.PlayerId) ? "   ★ Winner" : "")).ToArray() ?? [];
+        (_result.Kind == RoundKind.Duel ? " — duel" : _result.WinnerPlayerIds.Contains(row.PlayerId) ? "   ★ Winner" : "")).ToArray() ?? [];
 
     public void SyncClock(DateTimeOffset utc, TimeSpan latency = default)
     {
