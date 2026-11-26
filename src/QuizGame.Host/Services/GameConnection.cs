@@ -26,6 +26,7 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
     public event Action<PlayerSummary>? PickWaiting;
     public event Action<IReadOnlyList<ScoreEntry>>? ScoreboardUpdated;
     public event Action<GameFinishedDto>? GameFinished;
+    public event Action<DuelNominationDto>? DuelNominated;
     public bool IsConnected => _hub?.State == HubConnectionState.Connected;
     public event Action<DateTimeOffset, TimeSpan>? ClockSynchronized;
 
@@ -52,6 +53,7 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
         hub.On<PlayerSummary>(HubNames.Events.PickWaiting, picker => PickWaiting?.Invoke(picker));
         hub.On<ScoreEntry[]>(HubNames.Events.ScoreboardUpdated, scores => ScoreboardUpdated?.Invoke(scores));
         hub.On<GameFinishedDto>(HubNames.Events.GameFinished, finished => GameFinished?.Invoke(finished));
+        hub.On<DuelNominationDto>(HubNames.Events.DuelNominated, nomination => DuelNominated?.Invoke(nomination));
 
         hub.Reconnecting += _ =>
         {
@@ -94,6 +96,9 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
 
     public Task SendQuestionAsync(SendQuestionRequest request) =>
         RequireHub().InvokeAsync(HubNames.Methods.SendQuestion, request);
+
+    public Task ConfirmDuelAsync(Guid questionId) =>
+        RequireHub().InvokeAsync(HubNames.Methods.ConfirmDuel, new ConfirmDuelRequest { QuestionId = questionId });
 
     public Task CloseRoundAsync() =>
         RequireHub().InvokeAsync(HubNames.Methods.CloseRound);

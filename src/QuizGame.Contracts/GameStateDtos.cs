@@ -84,6 +84,8 @@ public sealed record RoomStateDto
     public CurrentRoundDto? CurrentRound { get; init; }
     /// <summary>Territory choice in progress (base, conquest claim, expansion or duel target), otherwise null.</summary>
     public CurrentPickDto? CurrentPick { get; init; }
+    /// <summary>Pending Duel target awaiting a host question; only populated for the host.</summary>
+    public DuelNominationDto? CurrentDuelNomination { get; init; }
     /// <summary>Caller-specific active question. Players must never receive HostQuestion.</summary>
     public QuestionForPlayer? PlayerQuestion { get; init; }
     public QuestionForHost? HostQuestion { get; init; }

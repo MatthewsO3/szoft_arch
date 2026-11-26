@@ -177,7 +177,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
     };
 
     public bool CanEndGame =>
-        CanTransition && Phase == GamePhase.Duel;
+        HasRoom && IsConnected && !IsBusy && !IsRoundOpen && Phase == GamePhase.Duel;
 
     public bool AllTerritoriesOwned =>
         TotalTerritories > 0 && OwnedTerritories >= TotalTerritories;
@@ -356,6 +356,12 @@ public sealed class PhaseControlViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(picker);
         ActivePickerName = picker.Name;
+        NotifyAll();
+    }
+
+    public void ClearPicker()
+    {
+        ActivePickerName = "";
         NotifyAll();
     }
 

@@ -46,7 +46,8 @@ public sealed record MapChange(
     PickView? NextPick,
     bool PickingFinished);
 
-public readonly record struct PickResult(PickError Error, MapChange? Change = null, bool AllClaimsIn = false)
+public readonly record struct PickResult(
+    PickError Error, MapChange? Change = null, bool AllClaimsIn = false, DuelNomination? Nomination = null)
 {
     public bool Ok => Error == PickError.None;
 }
@@ -176,6 +177,12 @@ public sealed partial class GameRoom
                 return new PhaseResult(PhaseError.InvalidTransition, _phase);
             if (_round is not null)
                 return new PhaseResult(PhaseError.RoundInProgress, _phase);
+            if (_phase == GamePhase.Duel && target == GamePhase.Results
+                && _pick is { Purpose: PickPurpose.DuelTarget })
+            {
+                _pick = null;
+                _pickQueue.Clear();
+            }
             if (_pick is not null || _pickQueue.Count > 0 || _claims.Count > 0)
                 return new PhaseResult(PhaseError.PickInProgress, _phase);
 
@@ -344,8 +351,15 @@ public sealed partial class GameRoom
                 var allIn = _pick is null && _pickQueue.Count == 0;
                 return new PickResult(PickError.None, new MapChange([], ScoreboardCore(), PickViewCore(), allIn), allIn);
             }
+            case PickPurpose.DuelTarget:
+            {
+                var target = _map!.Get(index)!;
+                _nomination = new DuelNomination(pick.PlayerId, target.OwnerId!.Value, index);
+                _pick = null;
+                return new PickResult(PickError.None, Nomination: _nomination);
+            }
             default:
-                return new PickResult(PickError.InvalidPick); // DuelTarget uses the nomination flow, not TryPick
+                return new PickResult(PickError.InvalidPick);
         }
     }
 
@@ -375,6 +389,32 @@ public sealed partial class GameRoom
     public bool ClaimsOpen
     {
         get { lock (_gate) return _pick is { Purpose: PickPurpose.ConquestClaim } || (_claims.Count > 0 && _round is null); }
+    }
+
+    /// <summary>Prompts the next Duel player who has an adjacent enemy territory to nominate.</summary>
+    public PickView? StartDuelTargetPick(DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (_phase != GamePhase.Duel || _round is not null || _pick is not null || _nomination is not null
+                || _duelRound >= Settings.DuelRounds || OneBaseHolderRemains())
+                return null;
+
+            // A player with no adjacent enemy territory cannot attack this turn, so rotate past them.
+            for (var i = 0; i < _turnOrder.Count; i++)
+            {
+                var attacker = ActivePlayerCore();
+                if (attacker is not null && ValidPicksFor(PickPurpose.DuelTarget, attacker.Value).Count > 0)
+                {
+                    _pickQueue.Clear();
+                    _pickQueue.Add(attacker.Value);
+                    AdvancePickCore(PickPurpose.DuelTarget, now);
+                    return PickViewCore();
+                }
+                RotateTurnOrderCore();
+            }
+            return null;
+        }
     }
 
     // ---- turn order ----

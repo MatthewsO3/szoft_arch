@@ -54,6 +54,7 @@ public sealed class MainViewModel : ViewModelBase
     private bool _loggedIn;
     private int _selectedTabIndex;
     private bool _roundOpen;
+    private DuelNominationDto? _duelNomination;
     private string _answerProgress = "";
     private int _copyFeedbackVersion;
 
@@ -84,7 +85,8 @@ public sealed class MainViewModel : ViewModelBase
         CloseRoomCommand = new AsyncRelayCommand(_ => CloseRoomAsync(), _ => HasRoom, ShowError);
         KickCommand = new AsyncRelayCommand(p => KickAsync((PlayerItem)p!), p => p is PlayerItem, ShowError);
         SendQuestionCommand = new AsyncRelayCommand(_ => SendQuestionAsync(),
-            _ => HasRoom && _connection.IsConnected && !_roundOpen && QuestionBank.CanSendSelectedQuestion, ShowError);
+            _ => HasRoom && _connection.IsConnected && !_roundOpen && QuestionBank.CanSendSelectedQuestion
+                && (PhaseControl.Phase != GamePhase.Duel || _duelNomination is not null), ShowError);
         CloseRoundCommand = new AsyncRelayCommand(_ => _connection.CloseRoundAsync(),
             _ => HasRoom && _connection.IsConnected && _roundOpen, ShowError);
         QuestionBank.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(QuestionBank.CanSendSelectedQuestion)) RefreshRoundCommands(); };
@@ -107,6 +109,7 @@ public sealed class MainViewModel : ViewModelBase
         });
         _connection.QuestionStarted += q => OnUi(() =>
         {
+            _duelNomination = null;
             Question.Start(q);
             _roundOpen = true;
             AnswerProgress = "";
@@ -124,9 +127,18 @@ public sealed class MainViewModel : ViewModelBase
         _connection.ClockSynchronized += (utc, latency) => OnUi(() => Question.SyncClock(utc, latency));
         _connection.PhaseChanged += phase => OnUi(() =>
         {
+            _duelNomination = null;
             RoomSettings.SetPhase(phase);
             Map.ApplyPhaseChanged(phase);
             PhaseControl.ApplyPhaseChanged(phase);
+            RefreshRoundCommands();
+        });
+        _connection.DuelNominated += nomination => OnUi(() =>
+        {
+            _duelNomination = nomination;
+            Map.ClearPicker();
+            PhaseControl.ClearPicker();
+            RefreshRoundCommands();
         });
         _connection.MapUpdated += update => OnUi(() => { Map.ApplyMapUpdated(update); PhaseControl.ApplyMapUpdated(update); });
         _connection.PickWaiting += picker => OnUi(() => { Map.ApplyPickWaiting(picker); PhaseControl.ApplyPickWaiting(picker); });
@@ -172,8 +184,9 @@ public sealed class MainViewModel : ViewModelBase
             ErrorMessage = QuestionBank.QuestionTypeGuidance;
             return Task.CompletedTask;
         }
-        // The round kind follows the current phase (Conquest / Expansion / Duel), decided server-side.
-        return _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
+        return PhaseControl.Phase == GamePhase.Duel
+            ? _connection.ConfirmDuelAsync(selected.Id)
+            : _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
     }
     public ICommand CopyRoomCodeCommand { get; }
 
@@ -339,6 +352,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         Question.Reset();
         _roundOpen = false;
+        _duelNomination = null;
         AnswerProgress = "";
         RoomCode = "";
         JoinUrl = "";
@@ -353,8 +367,8 @@ public sealed class MainViewModel : ViewModelBase
     {
         Question.ApplyState(state);
         _roundOpen = state.CurrentRound is not null;
+        _duelNomination = state.CurrentDuelNomination;
         AnswerProgress = state.AnswerCount is { } count ? $"Answered {count.Answered}/{count.Total}" : "";
-        RefreshRoundCommands();
         Players.Clear();
         foreach (var p in state.Players) Players.Add(new PlayerItem(p));
         Raise(nameof(PlayerCountText));
@@ -364,6 +378,7 @@ public sealed class MainViewModel : ViewModelBase
         RoomSettings.SetConnectionState(_connection.IsConnected);
         PhaseControl.SetConnectionState(_connection.IsConnected);
         SyncPlayerCounts();
+        RefreshRoundCommands();
     }
 
     private void Upsert(PlayerSummary dto)
