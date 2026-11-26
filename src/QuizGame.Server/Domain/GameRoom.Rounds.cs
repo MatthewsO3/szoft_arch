@@ -9,6 +9,8 @@ public enum StartRoundError
     RoundActive,
     InvalidRound,
     NoPlayers,
+    /// <summary>The round kind is not allowed in the current phase (BaseOrder: BaseSelection, Grab/Battle: Conquest).</summary>
+    InvalidPhase,
 }
 
 public enum SubmitStatus
@@ -112,12 +114,6 @@ public sealed partial class GameRoom
     private int _roundSeq;
     private RoundClosedDto? _lastRoundResult;
 
-    /// <summary>
-    /// Seam for the map (M3): returns the owner of a territory, or null if it is free / unknown.
-    /// Battle rounds need it to find the defender. Until the map exists nothing is owned.
-    /// </summary>
-    public Func<int, Guid?> TerritoryOwner { get; set; } = _ => null;
-
     public bool HasOpenRound
     {
         get { lock (_gate) return _round is not null; }
@@ -125,8 +121,7 @@ public sealed partial class GameRoom
 
     /// <summary>
     /// Opens a question round (plan §4.2 sub-state machine: Idle → QuestionOpen).
-    /// Phase gating (BaseOrder only in BaseSelection, Grab/Battle only in Conquest) arrives with the
-    /// phase machine in M3; until then a round may start in any phase while none is open.
+    /// Phase gating: BaseOrder only in BaseSelection (and only once), Grab/Battle only in Conquest.
     /// </summary>
     public StartRoundResult TryStartRound(QuestionDto question, SendQuestionRequest request, DateTimeOffset now)
     {
@@ -136,6 +131,11 @@ public sealed partial class GameRoom
                 return Fail(StartRoundError.RoundActive);
             if (_players.Count == 0)
                 return Fail(StartRoundError.NoPlayers);
+
+            if (request.Kind == RoundKind.BaseOrder
+                    ? _phase != GamePhase.BaseSelection || _baseOrderEstablished
+                    : _phase != GamePhase.Conquest)
+                return Fail(StartRoundError.InvalidPhase, $"A {request.Kind} round cannot be opened in the {_phase} phase.");
 
             var malformed = ValidateQuestion(question);
             if (malformed is not null)
@@ -154,7 +154,10 @@ public sealed partial class GameRoom
                 if (request.AttackerId is not { } attackerId || request.TargetTerritoryIndex is not { } targetIndex)
                     return Fail(StartRoundError.InvalidRound, "A battle needs an attacker and a target territory.");
 
-                var owner = TerritoryOwner(targetIndex);
+                if (_map is null || _map.Get(targetIndex) is null)
+                    return Fail(StartRoundError.InvalidRound, "The target territory does not exist.");
+
+                var owner = _map.OwnerOf(targetIndex);
                 if (owner is not { } defenderId)
                     return Fail(StartRoundError.InvalidRound, "The target territory has no owner to defend it.");
                 if (defenderId == attackerId)
@@ -301,6 +304,11 @@ public sealed partial class GameRoom
             _round = null;
             _lastRoundResult = dto;
             _lastActivity = now;
+
+            // The base-selection round fixes the pick order; the first picker is up right away (plan §4.2).
+            if (info.Kind == RoundKind.BaseOrder)
+                BeginBasePickingCore(outcome.Winners, now);
+
             return new ClosedRound(dto, record);
         }
     }

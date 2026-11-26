@@ -63,14 +63,14 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 |---|---|---|---|
 | `HostAttach` | GM | `roomCode` | Register host (and projector) connections for the room |
 | `KickPlayer` | GM | `playerId` | Remove a player |
-| `UpdateSettings` | GM | `RoomSettings` | Lobby only |
-| `StartGame` | GM | – | Lobby → BaseSelection; generates the map |
-| `AdvancePhase` | GM | `GamePhase targetPhase` | Validated transition (no skip/back) |
+| `UpdateSettings` | GM | `RoomSettings` | Lobby only; `InvalidPhase` afterwards, `InvalidSettings` for out-of-range values (§6) |
+| `StartGame` | GM | – | Lobby → BaseSelection; generates the map and pushes `PhaseChanged` + `RoomState` + `MapUpdated` (§6) |
+| `AdvancePhase` | GM | `GamePhase targetPhase` | Validated transition (no skip/back): BaseSelection → Conquest needs all bases picked, Conquest → Results ends the game (§6) |
 | `SendQuestion` | GM | `SendQuestionRequest` | Opens a round |
 | `CloseRound` | GM | – | Ends the current round early |
 | `ConfirmBattle` | GM | – | Confirms an attacker's nomination (D3) |
 | `SubmitAnswer` | Player | `SubmitAnswerRequest` | Returns `AnswerAccepted { roundId }` after recording an answer (first is final, D7) |
-| `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker |
+| `PickTerritory` | Player | `int territoryIndex` | Valid only for the current picker; base selection (§6) |
 | `NominateTarget` | Player | `int territoryIndex` | Attacker nominates a battle target (D3) |
 | `Rejoin` | Player/GM | – | Re-attach after disconnect; server replies with `RoomState` |
 | `LeaveRoom` | Player | – | Player leaves voluntarily; room gets `PlayerLeft` |
@@ -114,11 +114,12 @@ Initial set; extend as needed and keep in sync with the client:
 | `NameTaken` | Display name already used in the room |
 | `NotAuthorized` | Token lacks the role/room for this action |
 | `InvalidPhase` | Action not allowed in the current phase |
-| `InvalidTransition` | Illegal phase change |
+| `InvalidTransition` | Illegal phase change (skipping, going back, same phase) |
 | `AnswerTooLate` | Received after deadline + grace |
 | `AlreadyAnswered` | Second answer rejected (first is final) |
-| `NotYourPick` | PickTerritory from someone who isn't the picker |
-| `InvalidPick` | Territory not free / not adjacent / not valid |
+| `NotYourPick` | `PickTerritory` from someone who isn't the picker (also: no pick is pending, or the pick timed out) |
+| `InvalidPick` | Territory not in the picker's valid list (taken, out of range, or next to a base when `DisallowAdjacentBases`) |
+| `BaseSelectionIncomplete` | `AdvancePhase(Conquest)` before the base-order round was played and every player picked |
 | `NotEnoughPlayers` | StartGame below `MinPlayers` |
 | `InvalidCredentials` | Wrong username / password (REST 401) |
 | `PlayerNotFound` | Player is not (or no longer) in the room, e.g. kicked |
@@ -158,8 +159,8 @@ Initial set; extend as needed and keep in sync with the client:
 ## 5. Question rounds
 
 - **Opening:** `SendQuestion` works while no round is open. Kind ↔ type: `Grab` needs a multiple-choice question,
-  `BaseOrder` and `Battle` an estimation question. Phase gating (BaseOrder only in BaseSelection, Grab/Battle only in
-  Conquest) arrives with the phase machine; until then a round may open in any phase.
+  `BaseOrder` and `Battle` an estimation question. Phase gating: `BaseOrder` only in BaseSelection (and only once),
+  `Grab` / `Battle` only in Conquest, otherwise `InvalidPhase`. A battle's defender is the owner of the target territory.
 - **Who receives what:** host group → `QuestionStarted` with `QuestionForHost` (round ID, deadline, full question including correct answer) plus
   `AnswerCountChanged(0, n)`; players → `QuestionStarted` with `QuestionForPlayer` (options only, no text, no correct
   answer, `ServerDeadlineUtc`). Battle: only attacker and defender get the question, everybody else `BattleAnnounced`.
@@ -189,3 +190,42 @@ Initial set; extend as needed and keep in sync with the client:
 - **Host controls:** select a row in the question bank and use **Send selected question**. Multiple-choice
   questions open a Grab round; estimation questions open a BaseOrder round. **Close round** closes early.
   Battle selection and phase gating remain later map/game work.
+
+---
+
+## 6. Phases, map and base selection
+
+- **Settings:** `UpdateSettings(RoomSettings)` in the Lobby only (the host may call it repeatedly; no event is pushed, the
+  caller's success is the confirmation). Ranges as in `POST /rooms`: values > 0, `MinPlayers` ≥ 1, `MapPreset` a defined value.
+- **Starting:** `StartGame` needs at least `MinPlayers` *connected* players (`NotEnoughPlayers`). The server generates the map,
+  moves to BaseSelection and sends, in this order: `PhaseChanged(BaseSelection)` to the room, a fresh `RoomState` to every
+  connection (each with its own view), and one `MapUpdated` that carries **all** cells for the first time.
+  `AdvancePhase(BaseSelection)` from the Lobby does the same. Nobody can join after the start (`NotInLobby`).
+- **Map:** square grid, 4-neighbour adjacency, row-major `Index = Row × Cols + Col`. Presets: Small 5×5, Medium 6×8, Large 8×10.
+  The preset is a minimum: with fewer than 3 cells per player the next preset is used (beyond Large a square grid that fits).
+  `RoomState.Map` has the dimensions; `MapUpdated` only carries changed cells, so a client that wants the grid size reads it
+  from `RoomState` (it is also sent right after `StartGame`). A normal territory is worth `TerritoryValue`, a base `BaseValue`.
+- **Score:** `Σ value` of the owned territories, derived. `MapUpdate.Scoreboard` and `RoomState.Scoreboard` are sorted by
+  score, then territory count, then earlier base rank, then join order.
+- **Base order:** in BaseSelection the host sends **one** estimation question with kind `BaseOrder`. When it closes, the
+  `WinnerPlayerIds` of `RoundClosed` are everybody in ranking order and `PlayerSummary.BaseRank` (1-based) is set. The round
+  can be played only once.
+- **Picking:** right after `RoundClosed` the first player is asked, then the next one after each pick. The picker gets
+  `PickRequested { ValidTerritoryIndices, PickDeadlineUtc }`, everybody else (host, projector, other players) gets
+  `PickWaiting(PlayerSummary of the picker)`. The valid cells are all free territories, or with `DisallowAdjacentBases`
+  those that touch no base (if that leaves nothing, the rule is dropped for that pick). The picker answers with
+  `PickTerritory(index)`; errors: `NotYourPick`, `InvalidPick`. Every assignment is announced with `MapUpdated`
+  (changed cell: `OwnerPlayerId`, `IsBase = true`, `Value = BaseValue`, plus the scoreboard).
+- **Timeout:** after `PickTimeoutSeconds` the server assigns a random valid territory (also for offline players) and moves on;
+  a pick that arrives afterwards gets `NotYourPick`. When the last player has a base no further event is needed: the host sees
+  the last `MapUpdated` and moves on with `AdvancePhase(Conquest)`.
+- **Reconnect:** `RoomState.CurrentPick { PickerPlayerId, PickDeadlineUtc, ValidTerritoryIndices }` — the valid cells are only
+  filled for the picker. After the `RoomState` the server also resends `PickRequested` / `PickWaiting` to the reconnecting connection.
+- **Players leaving:** a kicked or leaving player's territories become free again (`MapUpdated`), and if it was their turn
+  the next player is asked.
+- **Phase changes:** `AdvancePhase(Conquest)` needs the base-order round played, no round open and no pick pending
+  (`BaseSelectionIncomplete` / `RoundInProgress`). `AdvancePhase(Results)` is only allowed from Conquest with no round
+  open; it sends `PhaseChanged(Results)` and `GameFinished { Standings, FinalMap }` (equal scores share a rank).
+  Everything else is `InvalidTransition`. `PhaseChanged` goes to the whole room.
+- **Persistence:** the cells of the map are stored in `Territories` (all at the start, then the changed ones); history write
+  failures are logged and never affect the game.

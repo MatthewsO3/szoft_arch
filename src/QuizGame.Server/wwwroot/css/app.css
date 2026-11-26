@@ -69,3 +69,15 @@ p button { min-height: 36px; margin: 0 0 0 .5rem; padding: 0 .8rem; }
 .ranking { list-style: none; padding: 0; }
 .ranking li { padding: .5rem; border-bottom: 1px solid var(--muted); overflow-wrap: anywhere; }
 #question-status { min-height: 3em; }
+
+/* Map screen */
+.map-grid { display: grid; gap: 4px; margin: .8rem 0; }
+.map-grid .cell {
+  aspect-ratio: 1; min-height: 0; margin: 0; padding: 0; border-radius: .4rem;
+  background: var(--panel); color: var(--text); font-size: .75rem; font-weight: 600;
+}
+.map-grid .cell.owned { color: #000; font-size: 1rem; }
+.map-grid .cell.mine { outline: 2px solid #fff; }
+.map-grid .cell.pickable { outline: 2px solid var(--ok); background: #24402f; animation: pulse 1s infinite alternate; }
+.map-grid .cell:disabled { cursor: default; opacity: 1; }
+@keyframes pulse { to { filter: brightness(1.4); } }

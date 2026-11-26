@@ -52,6 +52,7 @@
 
                         <WrapPanel Grid.Row="0">
                             <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
+                            <Button Content="Map" Click="OpenMapWindow" Padding="14,8" Margin="0,0,8,0" />
                             <Button Content="Create room" Command="{Binding CreateRoomCommand}" Padding="14,8" Margin="0,0,8,0" />
                             <Button Content="Close room" Command="{Binding CloseRoomCommand}" Padding="14,8" />
                         </WrapPanel>
@@ -167,6 +168,7 @@
                                 <Button Content="Send selected question" Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0" />
                                 <Button Content="Close round" Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0" />
                                 <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
+                                <Button Content="Map" Click="OpenMapWindow" Padding="14,8" Margin="0,0,8,0" />
                                 <TextBlock Text="{Binding AnswerProgress}" VerticalAlignment="Center" />
                             </WrapPanel>
                         </DockPanel>

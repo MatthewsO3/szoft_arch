@@ -135,9 +135,7 @@ public sealed class RoomsController(
         return true;
     }
 
-    private static bool AreValid(RoomSettings s) =>
-        s.TerritoryValue > 0 && s.BaseValue > 0 && s.WinnersPerRound >= 1 && s.MinPlayers >= 1 &&
-        s.PickTimeoutSeconds > 0 && s.DefaultQuestionSeconds > 0 && s.SuggestedMaxRounds >= 1;
+    private static bool AreValid(RoomSettings s) => RoomSettingsRules.IsValid(s);
 
     private static ObjectResult RoomNotFound() =>
         ApiProblem.Create(404, ErrorCodes.RoomNotFound, "Room not found.");

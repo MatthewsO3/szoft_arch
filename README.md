@@ -136,3 +136,17 @@ node rounds.mjs        # ~12 s, includes the deadline timer
 
 New tables `Rounds` and `Answers` need a migration: `dotnet ef migrations add Rounds --project src/QuizGame.Server`.
 
+### Phases, map and base selection (M3-A)
+
+The host starts the game with `StartGame` (Lobby → BaseSelection, generates the map), sends one estimation question as a
+`BaseOrder` round, and every player then picks a base territory in ranking order (`PickRequested` / `PickTerritory`, random
+assignment after `PickTimeoutSeconds`). `AdvancePhase(Conquest)` closes base selection. Hub methods and events:
+`docs/api-contract.md` §6. Rounds are phase-gated now: `BaseOrder` only in BaseSelection, `Grab` / `Battle` only in Conquest.
+
+```
+cd tests/smoke
+node baseselection.mjs   # ~10 s, Lobby -> BaseSelection -> Conquest -> Results, includes the pick timeout
+node rounds.mjs          # plays the base selection first, then the question rounds
+```
+
+The cells of the map are stored in a new `Territories` table: `dotnet ef migrations add Territories --project src/QuizGame.Server`.
