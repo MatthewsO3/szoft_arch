@@ -14,13 +14,17 @@ public sealed class Territory
     public required IReadOnlyList<int> Neighbours { get; init; }
     public int Value { get; set; }
     public bool IsBase { get; set; }
+
+    /// <summary>Remaining hit points. A base starts at the room's <c>BaseHealth</c>; a normal territory is 1 (plan §4.2 Duel).</summary>
+    public int Health { get; set; } = 1;
+
     public Guid? OwnerId { get; set; }
 
     public bool IsFree => OwnerId is null;
 
     public TerritoryDto ToDto() => new()
     {
-        Index = Index, Row = Row, Col = Col, Value = Value, IsBase = IsBase, OwnerPlayerId = OwnerId,
+        Index = Index, Row = Row, Col = Col, Value = Value, IsBase = IsBase, Health = Health, OwnerPlayerId = OwnerId,
     };
 }
 
@@ -148,21 +152,30 @@ public static class MapService
     }
 
     /// <summary>
-    /// Free territories a Conquest grab winner may take (plan §4.2 Conquest): a free cell adjacent to a
-    /// territory the player already owns, or — if they own none (e.g. their base was lost) — any free cell.
+    /// Free territories a player may take when a choice must touch what they already own (plan §4.2 Conquest/Duel):
+    /// a free cell adjacent to one of the player's tiles, or — if they own none, or none is adjacent — any free cell.
     /// </summary>
-    public static IReadOnlyList<int> ValidGrabPicks(GameMap map, Guid playerId)
+    public static IReadOnlyList<int> ValidAdjacentPicks(GameMap map, Guid playerId)
     {
         var free = map.Territories.Where(t => t.IsFree).ToList();
-        var ownsSomething = map.OwnedBy(playerId).Any();
-        if (!ownsSomething)
-            return free.Select(t => t.Index).ToList();
-
-        return free
+        var adjacent = free
             .Where(t => t.Neighbours.Any(n => map.Territories[n].OwnerId == playerId))
             .Select(t => t.Index)
             .ToList();
+        return adjacent.Count > 0 ? adjacent : free.Select(t => t.Index).ToList();
     }
+
+    /// <summary>All free territories, in index order (used for Expansion picks).</summary>
+    public static IReadOnlyList<int> FreeTerritories(GameMap map) =>
+        map.Territories.Where(t => t.IsFree).Select(t => t.Index).ToList();
+
+    /// <summary>Enemy territories adjacent to a tile the attacker owns (valid Duel targets, plan §4.2 Duel).</summary>
+    public static IReadOnlyList<int> ValidDuelTargets(GameMap map, Guid attackerId) =>
+        map.Territories
+            .Where(t => t.OwnerId is { } owner && owner != attackerId
+                        && t.Neighbours.Any(n => map.Territories[n].OwnerId == attackerId))
+            .Select(t => t.Index)
+            .ToList();
 
     /// <summary>Picks one of the valid territories at random for a player who ran out of time.</summary>
     public static int? AutoPick(IReadOnlyList<int> validIndices, Random random) =>

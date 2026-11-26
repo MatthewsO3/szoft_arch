@@ -8,6 +8,14 @@ This is the full test setup: the API and database in Docker, the game master on 
 tunnel giving players a public HTTPS URL. The question bank is seeded automatically (42 questions, 5
 categories) on the first database start.
 
+** Clean up on new branch / new pull**
+```bash
+dotnet clean # optional
+dotnet build
+docker compose up --build # docker compose up -d you don't have to do this then 
+```
+
+
 **1. Server + database (Docker).** Copy `.env.example` to `.env` and fill the secrets, then:
 
 ```bash

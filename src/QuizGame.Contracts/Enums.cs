@@ -1,17 +1,19 @@
 namespace QuizGame.Contracts;
 
 /// <summary>Top-level game phase. Advanced only by the game master; transitions are
-/// validated server-side (no skipping, no going back). See plan §4.2.</summary>
+/// validated server-side (no skipping, no going back). See docs/implementation_plan.md §4.2.</summary>
 public enum GamePhase
 {
     Lobby,
     BaseSelection,
     Conquest,
+    Expansion,
+    Duel,
     Results
 }
 
-/// <summary>Question type. Multiple choice decides free-territory capture (fastest
-/// correct); estimation decides base order and battles (closest guess). See plan §4.5.</summary>
+/// <summary>Question type. Multiple choice decides Conquest claims and Duels (correct/not);
+/// estimation decides Expansion picks (closest guess). See plan §4.5.</summary>
 public enum QuestionType
 {
     MultipleChoice,
@@ -21,12 +23,12 @@ public enum QuestionType
 /// <summary>What a round is for. See plan §5 (Rounds.Kind).</summary>
 public enum RoundKind
 {
-    /// <summary>Base-selection estimation round that establishes pick order.</summary>
-    BaseOrder,
+    /// <summary>Conquest round: everyone claims a free tile, then a shared multiple-choice question; every correct claimer keeps their tile.</summary>
+    Conquest,
 
-    /// <summary>Conquest multiple-choice round: fastest correct grabs a free territory.</summary>
-    Grab,
+    /// <summary>Expansion round: one estimation question; the closest guess picks a free tile. Repeats until the map is full.</summary>
+    Expansion,
 
-    /// <summary>Conquest estimation duel over an owned territory (attacker vs defender).</summary>
-    Battle
+    /// <summary>Duel round: the active player attacks an adjacent enemy tile with a multiple-choice question (attacker vs defender).</summary>
+    Duel
 }

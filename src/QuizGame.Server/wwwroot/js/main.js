@@ -33,7 +33,7 @@ const question = createQuestion({
   playerId: () => session?.player.id,
 });
 
-const map = createMap({ pick: (i) => hub.pickTerritory(i), playerId: () => session?.player.id });
+const map = createMap({ pick: (i) => hub.pickTerritory(i), nominate: (i) => hub.nominateTarget(i), playerId: () => session?.player.id });
 
 map.setClock((deadline) => clock.remaining(deadline));
 
@@ -119,6 +119,7 @@ async function connect() {
     onState: setConnState,
     RoomState: applyState,
     QuestionStarted: (data) => { question.start(data); show('question'); },
+    DuelAnnounced: (data) => { map.duelAnnounced(data); show('map'); },
     MapUpdated: (data) => { map.update(data); },
     PickRequested: (req) => { map.pickRequested(req); show('map'); },
     PickWaiting: (player) => { map.pickWaiting(player); show('map'); },

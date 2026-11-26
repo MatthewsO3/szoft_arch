@@ -118,6 +118,9 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 app.MapHub<GameHub>(HubNames.HubPath);
 
+// Wire the Conquest claim-stage callback between the two coordinators.
+app.Services.GetRequiredService<RoundCoordinator>().Wire();
+
 app.Run();
 return 0;
 

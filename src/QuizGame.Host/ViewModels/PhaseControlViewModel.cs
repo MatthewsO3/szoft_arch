@@ -250,7 +250,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
         IsRoundOpen = false;
         IsBusy = false;
         MinPlayers = settings.MinPlayers;
-        SuggestedMaxRounds = settings.SuggestedMaxRounds;
+        SuggestedMaxRounds = settings.DuelRounds;
         ConquestRoundsCompleted = 0;
         ActivePickerName = "";
         HasUnsavedSettings = false;
@@ -267,7 +267,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
         Phase = state.Phase;
         IsRoundOpen = state.CurrentRound is not null;
         MinPlayers = state.Settings.MinPlayers;
-        SuggestedMaxRounds = state.Settings.SuggestedMaxRounds;
+        SuggestedMaxRounds = state.Settings.DuelRounds;
         TotalPlayerCount = state.Players.Count;
         ConnectedPlayerCount = state.Players.Count(p => p.Connected);
         ActivePickerName = "";
@@ -293,7 +293,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(settings);
         MinPlayers = settings.MinPlayers;
-        SuggestedMaxRounds = settings.SuggestedMaxRounds;
+        SuggestedMaxRounds = settings.DuelRounds;
         NotifyAll();
     }
 

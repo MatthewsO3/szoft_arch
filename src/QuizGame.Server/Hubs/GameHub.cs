@@ -153,14 +153,14 @@ public sealed class GameHub(
         if (error is not null) throw new HubException(error);
     }
 
-    /// <summary>Host opens a question round (plan §4.2). The server pushes <c>QuestionStarted</c> to each audience.</summary>
+    /// <summary>Host opens a question round. The kind follows the phase (Conquest / Expansion / Duel).</summary>
     [Authorize(Policy = Policies.GameMasterOnly)]
     public async Task SendQuestion(SendQuestionRequest request)
     {
         var room = HostRoom();
         if (request is null) throw new HubException(ErrorCodes.InvalidRound);
 
-        var error = await rounds.StartAsync(room, request, Context.ConnectionAborted);
+        var error = await rounds.SendQuestionAsync(room, request, Context.ConnectionAborted);
         if (error is not null) throw new HubException(error);
     }
 
@@ -172,7 +172,7 @@ public sealed class GameHub(
         if (!await rounds.CloseAsync(room)) throw new HubException(ErrorCodes.NoActiveRound);
     }
 
-    /// <summary>An attacker nominates a territory to battle for; the host is notified and confirms it (plan §4.2, D3).</summary>
+    /// <summary>The active player nominates a tile to attack in the Duel phase; the host is notified and confirms it.</summary>
     [Authorize(Policy = Policies.PlayerOnly)]
     public async Task NominateTarget(int territoryIndex)
     {
@@ -184,14 +184,14 @@ public sealed class GameHub(
         if (error is not null) throw new HubException(error);
     }
 
-    /// <summary>Host confirms a nominated battle and opens the duel with the chosen estimation question (plan §4.2, D3).</summary>
+    /// <summary>Host confirms a nominated duel and opens it with the chosen multiple-choice question.</summary>
     [Authorize(Policy = Policies.GameMasterOnly)]
-    public async Task ConfirmBattle(ConfirmBattleRequest request)
+    public async Task ConfirmDuel(ConfirmDuelRequest request)
     {
         var room = HostRoom();
         if (request is null) throw new HubException(ErrorCodes.InvalidRound);
 
-        var error = await rounds.ConfirmBattleAsync(room, request.QuestionId, Context.ConnectionAborted);
+        var error = await rounds.ConfirmDuelAsync(room, request.QuestionId, Context.ConnectionAborted);
         if (error is not null) throw new HubException(error);
     }
 

@@ -2,8 +2,8 @@ namespace QuizGame.Contracts;
 
 /// <summary>
 /// Tunable room rules, set by the host in the Lobby (plan §4, §16). Every rule the
-/// spec leaves open (D1–D11) lives here so the game can be reconfigured without code
-/// changes. Defaults match the plan.
+/// game leaves open lives here so the game can be reconfigured without code changes.
+/// Defaults match the plan.
 /// </summary>
 public sealed record RoomSettings
 {
@@ -16,8 +16,20 @@ public sealed record RoomSettings
     /// <summary>Point value of a base territory (plan §4.3).</summary>
     public int BaseValue { get; init; } = 300;
 
-    /// <summary>Winners per multiple-choice grab round (D2).</summary>
-    public int WinnersPerRound { get; init; } = 1;
+    /// <summary>Hit points of a base: it must be won in a Duel this many times before it is captured (plan §4.2 Duel).</summary>
+    public int BaseHealth { get; init; } = 3;
+
+    /// <summary>Number of Conquest rounds before the phase ends (plan §4.2 Conquest).</summary>
+    public int ConquestRounds { get; init; } = 5;
+
+    /// <summary>Maximum number of Duel rounds before the phase ends (plan §4.2 Duel); the phase may also end when one player holds every base.</summary>
+    public int DuelRounds { get; init; } = 10;
+
+    /// <summary>Bonus points a defender earns for a correct answer in a Duel (plan §4.3).</summary>
+    public int DefenderBonus { get; init; } = 100;
+
+    /// <summary>Bonus points each duellist earns when attacker and defender both answer correctly (plan §4.3).</summary>
+    public int DrawBonus { get; init; } = 50;
 
     /// <summary>Minimum connected players before the host may start (plan §4.2 Lobby).</summary>
     public int MinPlayers { get; init; } = 2;
@@ -27,9 +39,6 @@ public sealed record RoomSettings
 
     /// <summary>Default per-question answer window when the question does not override it.</summary>
     public int DefaultQuestionSeconds { get; init; } = 20;
-
-    /// <summary>Soft limit that makes the host UI suggest ending Conquest (D4).</summary>
-    public int SuggestedMaxRounds { get; init; } = 10;
 
     /// <summary>Forbid choosing a base adjacent to another base during BaseSelection (optional rule, plan §4.2).</summary>
     public bool DisallowAdjacentBases { get; init; } = false;

@@ -6,9 +6,9 @@ using QuizGame.Server.Hubs;
 namespace QuizGame.Server.Services;
 
 /// <summary>
-/// Phase changes, room settings and the base-selection flow (plan §4.2, §7.1): starts the game and generates the
-/// map, advances the phase, asks each player in ranking order for a base, enforces the pick timeout (random valid
-/// territory) and pushes the resulting <c>PhaseChanged</c> / <c>MapUpdated</c> / <c>PickRequested</c> / <c>PickWaiting</c> events.
+/// Phase changes, room settings, turn order and the territory-pick flow (plan §4.2, §7.1): starts the game and
+/// generates the map, advances phases, drives base picks, Conquest claims, Expansion picks and the pick timeout,
+/// and pushes <c>PhaseChanged</c> / <c>MapUpdated</c> / <c>PickRequested</c> / <c>PickWaiting</c>.
 /// Every public method takes the room's command gate; <c>…CoreAsync</c> methods expect the caller to hold it.
 /// </summary>
 public sealed class PhaseCoordinator(
@@ -22,21 +22,21 @@ public sealed class PhaseCoordinator(
     private readonly object _gate = new();
     private readonly Dictionary<string, (long Seq, CancellationTokenSource Cts)> _timers = [];
 
+    // RoundCoordinator calls back here after a Conquest claim stage fills so it can open the question.
+    public Func<GameRoom, Task>? OnClaimsReady { get; set; }
+
     // ---- hub commands ----
 
-    /// <summary>Host changes the room settings (Lobby only). Returns the error code, or null.</summary>
     public Task<string?> UpdateSettingsAsync(GameRoom room, RoomSettings settings) =>
         gate.RunAsync(room, () => Task.FromResult(Code(room.TryUpdateSettings(settings))));
 
-    /// <summary>Lobby → BaseSelection: generates the map and tells everybody.</summary>
     public Task<string?> StartGameAsync(GameRoom room) =>
         gate.RunAsync(room, () => StartGameCoreAsync(room));
 
-    /// <summary>Host moves to the next phase. Returns the error code, or null.</summary>
     public Task<string?> AdvancePhaseAsync(GameRoom room, GamePhase target) =>
         gate.RunAsync(room, () => AdvancePhaseCoreAsync(room, target));
 
-    /// <summary>The current picker chooses a base territory.</summary>
+    /// <summary>The current picker chooses a territory (base, conquest claim or expansion).</summary>
     public Task<string?> PickAsync(GameRoom room, Guid playerId, int territoryIndex) =>
         gate.RunAsync(room, async () =>
         {
@@ -47,15 +47,15 @@ public sealed class PhaseCoordinator(
                 {
                     PickError.InvalidPick => ErrorCodes.InvalidPick,
                     PickError.InvalidPhase => ErrorCodes.InvalidPhase,
+                    PickError.NoActivePick => ErrorCodes.NotYourPick,
                     _ => ErrorCodes.NotYourPick,
                 };
             }
 
-            await AfterMapChangeCoreAsync(room, result.Change!);
+            await AfterPickCoreAsync(room, result);
             return null;
         });
 
-    /// <summary>A player was kicked or left: free their territories and move on if they were up to pick.</summary>
     public Task OnPlayerRemovedAsync(GameRoom room, Guid playerId) =>
         gate.RunAsync(room, async () =>
         {
@@ -66,36 +66,42 @@ public sealed class PhaseCoordinator(
 
     // ---- called by RoundCoordinator while it holds the gate ----
 
-    /// <summary>
-    /// A round closed. BaseOrder and Grab start a pick (the first player is asked); a battle transfers the
-    /// contested territory straight away. Both push the resulting <c>MapUpdated</c> / <c>PickRequested</c>.
-    /// </summary>
-    public async Task OnRoundClosedCoreAsync(GameRoom room, ClosedRound closed)
+    /// <summary>Begins a Conquest claim stage: asks the first player to claim a tile.</summary>
+    public async Task StartConquestClaimsCoreAsync(GameRoom room)
     {
-        // A battle handed the target territory to the winner: tell everybody (no pick follows).
-        if (closed.BattleChange is { } change)
+        if (room.StartConquestClaims(time.GetUtcNow()) is { } pick)
+            await PublishPickAsync(room, pick);
+    }
+
+    /// <summary>After a round closed with a map change and/or an Expansion pick, broadcast and ask the next picker.</summary>
+    public async Task OnRoundResolvedCoreAsync(GameRoom room, ClosedRound closed)
+    {
+        if (closed.Change is { } change && change.Changed.Count > 0)
         {
             await recorder.TerritoriesChangedAsync(room.SessionId, ToRecords(change.Changed));
             await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(
                 HubNames.Events.MapUpdated, new MapUpdate(change.Changed, change.Scoreboard));
         }
+        else if (closed.Change is { } scoreOnly)
+        {
+            // Duel draw / defender bonus: no cells changed but scores did.
+            await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(
+                HubNames.Events.ScoreboardUpdated, scoreOnly.Scoreboard);
+        }
 
-        // BaseOrder and Grab both start a pick; ask whoever is up now.
-        if (room.CurrentPickView() is { } pick)
+        if (closed.ExpansionPick is { } pick)
             await PublishPickAsync(room, pick);
     }
 
-    /// <summary>Resends the pending pick to a (re)attached connection, right after its <c>RoomState</c>.</summary>
     public async Task SendPickStateCoreAsync(GameRoom room, IClientProxy caller, Guid? playerId)
     {
         if (room.CurrentPickView() is not { } pick) return;
         if (playerId == pick.Picker.Id)
-            await caller.SendAsync(HubNames.Events.PickRequested, new PickRequest(pick.ValidTerritoryIndices, pick.Deadline));
+            await caller.SendAsync(HubNames.Events.PickRequested, new PickRequest(pick.ValidTerritoryIndices, pick.Deadline, pick.Purpose));
         else
             await caller.SendAsync(HubNames.Events.PickWaiting, pick.Picker);
     }
 
-    /// <summary>Stops the pick timer of a room that is being closed or removed.</summary>
     public void Cancel(string roomCode) => CancelTimer(roomCode, null);
 
     // ---- internals ----
@@ -111,6 +117,9 @@ public sealed class PhaseCoordinator(
         await PushStateToAllAsync(room);
         await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(
             HubNames.Events.MapUpdated, new MapUpdate(started.Map.Territories, room.Scoreboard()));
+
+        // Ask the first player for their base.
+        if (room.CurrentPickView() is { } pick) await PublishPickAsync(room, pick);
         return null;
     }
 
@@ -135,12 +144,23 @@ public sealed class PhaseCoordinator(
         return null;
     }
 
-    // A base was assigned (picked or auto) or released (player left): tell everybody and ask the next picker.
+    // A pick resolved: broadcast the map change and ask the next picker, or tell the round coordinator claims are in.
+    private async Task AfterPickCoreAsync(GameRoom room, PickResult result)
+    {
+        if (result.Change is { } change) await AfterMapChangeCoreAsync(room, change);
+
+        // Conquest claim stage finished: let the round coordinator open the question.
+        if (result.AllClaimsIn && OnClaimsReady is { } ready) await ready(room);
+    }
+
     private async Task AfterMapChangeCoreAsync(GameRoom room, MapChange change)
     {
-        await recorder.TerritoriesChangedAsync(room.SessionId, ToRecords(change.Changed));
-        await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(
-            HubNames.Events.MapUpdated, new MapUpdate(change.Changed, change.Scoreboard));
+        if (change.Changed.Count > 0)
+        {
+            await recorder.TerritoriesChangedAsync(room.SessionId, ToRecords(change.Changed));
+            await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(
+                HubNames.Events.MapUpdated, new MapUpdate(change.Changed, change.Scoreboard));
+        }
 
         if (change.NextPick is not { } next)
         {
@@ -148,7 +168,6 @@ public sealed class PhaseCoordinator(
             return;
         }
 
-        // Same picker as before (e.g. somebody else left): keep their question and timer as they are.
         bool alreadyAsked;
         lock (_gate) alreadyAsked = _timers.TryGetValue(room.Code, out var t) && t.Seq == next.Seq;
         if (!alreadyAsked) await PublishPickAsync(room, next);
@@ -160,7 +179,7 @@ public sealed class PhaseCoordinator(
 
         var pickerConnections = registry.GetPlayerConnections(room.Code, [pick.Picker.Id]);
         await hub.Clients.Clients(pickerConnections).SendAsync(
-            HubNames.Events.PickRequested, new PickRequest(pick.ValidTerritoryIndices, pick.Deadline));
+            HubNames.Events.PickRequested, new PickRequest(pick.ValidTerritoryIndices, pick.Deadline, pick.Purpose));
         await hub.Clients.GroupExcept(GroupNames.Room(room.Code), pickerConnections).SendAsync(
             HubNames.Events.PickWaiting, pick.Picker);
     }
@@ -195,28 +214,21 @@ public sealed class PhaseCoordinator(
                 await Task.Delay(delay, time, cts.Token);
                 await gate.RunAsync(room, () => PickTimedOutCoreAsync(room, pick.Seq));
             }
-            catch (OperationCanceledException)
-            {
-                // picked in time, phase changed or room removed
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Auto-pick in room {Room} failed", room.Code);
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { logger.LogError(ex, "Auto-pick in room {Room} failed", room.Code); }
         });
     }
 
     private async Task<bool> PickTimedOutCoreAsync(GameRoom room, long seq)
     {
         var result = room.TryAutoPick(seq, time.GetUtcNow());
-        if (!result.Ok) return false; // the player picked just in time, or the pick is gone
+        if (!result.Ok) return false;
 
         logger.LogInformation("Room {Room}: pick timed out, territory assigned at random", room.Code);
-        await AfterMapChangeCoreAsync(room, result.Change!);
+        await AfterPickCoreAsync(room, result);
         return true;
     }
 
-    // Only the timer of the given pick is cancelled (null = whatever is running).
     private void CancelTimer(string roomCode, long? seq)
     {
         CancellationTokenSource? cts = null;
@@ -233,7 +245,7 @@ public sealed class PhaseCoordinator(
     }
 
     private static IReadOnlyList<TerritoryRecord> ToRecords(IReadOnlyList<TerritoryDto> cells) =>
-        cells.Select(c => new TerritoryRecord(c.Index, c.Row, c.Col, c.Value, c.IsBase, c.OwnerPlayerId)).ToList();
+        cells.Select(c => new TerritoryRecord(c.Index, c.Row, c.Col, c.Value, c.IsBase, c.Health, c.OwnerPlayerId)).ToList();
 
     private static string? Code(PhaseError error) => error switch
     {
@@ -242,7 +254,9 @@ public sealed class PhaseCoordinator(
         PhaseError.InvalidTransition => ErrorCodes.InvalidTransition,
         PhaseError.NotEnoughPlayers => ErrorCodes.NotEnoughPlayers,
         PhaseError.RoundInProgress => ErrorCodes.RoundInProgress,
+        PhaseError.PickInProgress => ErrorCodes.RoundInProgress,
         PhaseError.BaseSelectionIncomplete => ErrorCodes.BaseSelectionIncomplete,
+        PhaseError.PhaseNotComplete => ErrorCodes.PhaseNotComplete,
         PhaseError.InvalidSettings => ErrorCodes.InvalidSettings,
         _ => ErrorCodes.InvalidPhase,
     };

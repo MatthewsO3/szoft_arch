@@ -14,11 +14,12 @@ public class RoomSettingsViewModelTests
         Assert.Equal(MapPreset.Medium, vm.SelectedMapPreset.Value);
         Assert.Equal("100", vm.TerritoryValueText);
         Assert.Equal("300", vm.BaseValueText);
-        Assert.Equal("1", vm.WinnersPerRoundText);
+        Assert.Equal("5", vm.ConquestRoundsText);
+        Assert.Equal("10", vm.DuelRoundsText);
+        Assert.Equal("3", vm.BaseHealthText);
         Assert.Equal("2", vm.MinPlayersText);
         Assert.Equal("20", vm.PickTimeoutSecondsText);
         Assert.Equal("20", vm.DefaultQuestionSecondsText);
-        Assert.Equal("10", vm.SuggestedMaxRoundsText);
         Assert.False(vm.DisallowAdjacentBases);
 
         Assert.False(vm.HasRoom);
@@ -200,11 +201,11 @@ public class RoomSettingsViewModelTests
             MapPreset = MapPreset.Small,
             TerritoryValue = 200,
             BaseValue = 600,
-            WinnersPerRound = 3,
+            ConquestRounds = 3,
             MinPlayers = 4,
             PickTimeoutSeconds = 30,
             DefaultQuestionSeconds = 45,
-            SuggestedMaxRounds = 15,
+            DuelRounds = 15,
             DisallowAdjacentBases = true
         };
 
@@ -295,3 +296,4 @@ public class RoomSettingsViewModelTests
         Assert.False(vm.IsConnected);
     }
 }
+

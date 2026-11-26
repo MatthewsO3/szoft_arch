@@ -76,8 +76,8 @@
                 </StackPanel>
 
                 <StackPanel Grid.Row="1" Grid.Column="2">
-                    <TextBlock Text="Winners / round" Style="{StaticResource FieldLabelStyle}" />
-                    <TextBox Text="{Binding WinnersPerRoundText, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBlock Text="Conquest rounds" Style="{StaticResource FieldLabelStyle}" />
+                    <TextBox Text="{Binding ConquestRoundsText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>
@@ -97,8 +97,8 @@
                 </StackPanel>
 
                 <StackPanel Grid.Row="3" Grid.Column="0">
-                    <TextBlock Text="Suggested max rounds" Style="{StaticResource FieldLabelStyle}" />
-                    <TextBox Text="{Binding SuggestedMaxRoundsText, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBlock Text="Duel rounds" Style="{StaticResource FieldLabelStyle}" />
+                    <TextBox Text="{Binding DuelRoundsText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>

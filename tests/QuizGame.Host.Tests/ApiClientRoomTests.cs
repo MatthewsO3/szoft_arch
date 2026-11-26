@@ -46,11 +46,11 @@ public class ApiClientRoomTests
             MapPreset = MapPreset.Large,
             TerritoryValue = 150,
             BaseValue = 500,
-            WinnersPerRound = 2,
+            ConquestRounds = 2,
             MinPlayers = 3,
             PickTimeoutSeconds = 25,
             DefaultQuestionSeconds = 30,
-            SuggestedMaxRounds = 12,
+            DuelRounds = 12,
             DisallowAdjacentBases = true
         };
 
@@ -86,3 +86,4 @@ public class ApiClientRoomTests
         Assert.Equal("Room settings contain an out-of-range value.", ex.Message);
     }
 }
+
