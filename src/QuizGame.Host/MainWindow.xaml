@@ -237,12 +237,6 @@
                 <TabItem Header="Question bank">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" Margin="12">
-                            <TextBlock DockPanel.Dock="Right"
-                                       Text="{Binding PhaseControl.PhaseBannerText, Mode=OneWay}"
-                                       FontWeight="SemiBold"
-                                       Foreground="#2563EB"
-                                       VerticalAlignment="Center"
-                                       Margin="12,0,0,0" />
                             <WrapPanel>
                                 <Button  Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
