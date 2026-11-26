@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:QuizGame.Host.Views"
         Title="Strategic Quiz – Game Master"
-        Width="980" Height="720" MinWidth="760" MinHeight="560"
+        Width="1040" Height="740" MinWidth="820" MinHeight="580"
         WindowStartupLocation="CenterScreen">
 
     <DockPanel Margin="24">
@@ -47,7 +47,6 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
@@ -57,59 +56,120 @@
                             <Button Content="Close room" Command="{Binding CloseRoomCommand}" Padding="14,8" />
                         </WrapPanel>
 
-                        <StackPanel Grid.Row="1" Margin="0,24,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
-                            <TextBlock Text="Room code" Foreground="Gray" HorizontalAlignment="Center" />
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <TextBlock Text="{Binding RoomCode}" FontSize="96" FontWeight="Bold" FontFamily="Consolas"
-                                           VerticalAlignment="Center" />
-                                <Button Content="{Binding CopyRoomCodeText, Mode=OneWay}"
-                                        Command="{Binding CopyRoomCodeCommand}"
-                                        MinWidth="70"
-                                        Padding="12,6"
-                                        Margin="16,0,0,0"
-                                        VerticalAlignment="Center"
-                                        ToolTip="Copy room code to clipboard" />
-                            </StackPanel>
-                        </StackPanel>
+                        <views:PhaseControlView Grid.Row="1"
+                                                DataContext="{Binding PhaseControl}"
+                                                Visibility="{Binding HasRoom, Converter={StaticResource B2V}}"
+                                                Margin="0,12,0,0" />
 
-                        <StackPanel Grid.Row="2" Margin="0,4,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
-                            <TextBlock Text="Players join at (open on a phone, or use the code on the start page):"
-                                       Foreground="Gray" HorizontalAlignment="Center" />
-                            <TextBox Text="{Binding JoinUrl, Mode=OneWay}" IsReadOnly="True" BorderThickness="0"
-                                     HorizontalAlignment="Center" FontSize="16" />
-                        </StackPanel>
+                        <Grid Grid.Row="2" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="340" />
+                            </Grid.ColumnDefinitions>
 
-                        <GroupBox Grid.Row="3" Margin="0,20,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
-                            <GroupBox.Header>
-                                <TextBlock Text="{Binding PlayerCountText}" FontWeight="SemiBold" />
-                            </GroupBox.Header>
-                            <ListBox ItemsSource="{Binding Players}" HorizontalContentAlignment="Stretch">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <DockPanel Margin="2">
-                                            <Button DockPanel.Dock="Right" Content="Kick" Padding="10,2"
-                                                    Command="{Binding DataContext.KickCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}" />
-                                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="Gray"
-                                                       Margin="0,0,16,0" VerticalAlignment="Center" />
-                                            <Ellipse Width="14" Height="14" Fill="{Binding ColorHex}" Margin="0,0,10,0" />
-                                            <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" />
-                                        </DockPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </GroupBox>
+                            <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Grid.RowSpan="3"
+                                        Visibility="{Binding HasNoRoom, Converter={StaticResource B2V}}"
+                                        Background="#F9FAFB"
+                                        BorderBrush="#E5E7EB"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="24"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="Configure room settings on the right, then click Create room to open a lobby."
+                                               Foreground="Gray"
+                                               FontSize="15"
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center" />
+                                </Border>
+
+                                <StackPanel Grid.Row="0" Margin="0,8,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
+                                    <TextBlock Text="Room code" Foreground="Gray" HorizontalAlignment="Center" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding RoomCode}" FontSize="64" FontWeight="Bold" FontFamily="Consolas"
+                                                   VerticalAlignment="Center" />
+                                        <Button Content="{Binding CopyRoomCodeText, Mode=OneWay}"
+                                                Command="{Binding CopyRoomCodeCommand}"
+                                                MinWidth="70"
+                                                Padding="12,6"
+                                                Margin="16,0,0,0"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Copy room code to clipboard" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Margin="0,4,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
+                                    <TextBlock Text="Players join at (open on a phone, or use the code on the start page):"
+                                               Foreground="Gray" HorizontalAlignment="Center" />
+                                    <TextBox Text="{Binding JoinUrl, Mode=OneWay}" IsReadOnly="True" BorderThickness="0"
+                                             HorizontalAlignment="Center" FontSize="15" />
+                                </StackPanel>
+
+                                <GroupBox Grid.Row="2" Margin="0,16,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
+                                    <GroupBox.Header>
+                                        <TextBlock Text="{Binding PlayerCountText}" FontWeight="SemiBold" />
+                                    </GroupBox.Header>
+                                    <ListBox ItemsSource="{Binding Players}" HorizontalContentAlignment="Stretch">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel Margin="2">
+                                                    <Button DockPanel.Dock="Right" Content="Kick" Padding="10,2"
+                                                            Command="{Binding DataContext.KickCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="Gray"
+                                                               Margin="0,0,16,0" VerticalAlignment="Center" />
+                                                    <Ellipse Width="14" Height="14" Fill="{Binding ColorHex}" Margin="0,0,10,0" />
+                                                    <TextBlock Text="{Binding BaseRankText, Mode=OneWay}" Foreground="Gray" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center" Margin="0,0,8,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="Text" Value="">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </GroupBox>
+                            </Grid>
+
+                            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                                <views:RoomSettingsView DataContext="{Binding RoomSettings}" />
+                            </ScrollViewer>
+                        </Grid>
                     </Grid>
                 </TabItem>
 
                 <TabItem Header="Question bank">
                     <DockPanel>
-                        <WrapPanel DockPanel.Dock="Top" Margin="12">
-                            <Button Content="Send selected question" Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0" />
-                            <Button Content="Close round" Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0" />
-                            <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
-                            <TextBlock Text="{Binding AnswerProgress}" VerticalAlignment="Center" />
-                        </WrapPanel>
+                        <DockPanel DockPanel.Dock="Top" Margin="12">
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding PhaseControl.PhaseBannerText, Mode=OneWay}"
+                                       FontWeight="SemiBold"
+                                       Foreground="#2563EB"
+                                       VerticalAlignment="Center"
+                                       Margin="12,0,0,0" />
+                            <WrapPanel>
+                                <Button Content="Send selected question" Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0" />
+                                <Button Content="Close round" Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0" />
+                                <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
+                                <TextBlock Text="{Binding AnswerProgress}" VerticalAlignment="Center" />
+                            </WrapPanel>
+                        </DockPanel>
                         <views:QuestionBankView DataContext="{Binding QuestionBank}" Margin="12" />
                     </DockPanel>
                 </TabItem>

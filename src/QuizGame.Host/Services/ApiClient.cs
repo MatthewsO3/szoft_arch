@@ -73,8 +73,8 @@ public sealed class ApiClient : IQuestionBankApi, IDisposable
     public Task<AuthResponse> LoginAsync(string username, string password) =>
         SendAsync<AuthResponse>(HttpMethod.Post, "api/auth/login", new LoginRequest(username, password));
 
-    public Task<CreateRoomResponse> CreateRoomAsync() =>
-        SendAsync<CreateRoomResponse>(HttpMethod.Post, "api/rooms");
+    public Task<CreateRoomResponse> CreateRoomAsync(RoomSettings? settings = null, CancellationToken ct = default) =>
+        SendAsync<CreateRoomResponse>(HttpMethod.Post, "api/rooms", settings, ct);
 
     public Task CloseRoomAsync(string roomCode) =>
         SendAsync<object>(HttpMethod.Delete, $"api/rooms/{roomCode}");

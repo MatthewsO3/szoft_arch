@@ -7,7 +7,7 @@ namespace QuizGame.Host.Services;
 /// Owns the single SignalR connection of the host app (plan §9.1). Events fire on a background thread;
 /// the view model marshals them to the UI thread. After an automatic reconnect it re-attaches to the room (plan §7.5).
 /// </summary>
-public sealed class GameConnection : IAsyncDisposable
+public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
 {
     private HubConnection? _hub;
 
@@ -21,6 +21,11 @@ public sealed class GameConnection : IAsyncDisposable
     public event Action<QuestionForHost>? QuestionStarted;
     public event Action<RoundClosedDto>? RoundClosed;
     public event Action<AnswerCount>? AnswerCountChanged;
+    public event Action<GamePhase>? PhaseChanged;
+    public event Action<MapUpdate>? MapUpdated;
+    public event Action<PlayerSummary>? PickWaiting;
+    public event Action<IReadOnlyList<ScoreEntry>>? ScoreboardUpdated;
+    public event Action<GameFinishedDto>? GameFinished;
     public bool IsConnected => _hub?.State == HubConnectionState.Connected;
     public event Action<DateTimeOffset, TimeSpan>? ClockSynchronized;
 
@@ -42,6 +47,11 @@ public sealed class GameConnection : IAsyncDisposable
         hub.On<QuestionForHost>(HubNames.Events.QuestionStarted, q => QuestionStarted?.Invoke(q));
         hub.On<RoundClosedDto>(HubNames.Events.RoundClosed, r => RoundClosed?.Invoke(r));
         hub.On<AnswerCount>(HubNames.Events.AnswerCountChanged, c => AnswerCountChanged?.Invoke(c));
+        hub.On<GamePhase>(HubNames.Events.PhaseChanged, phase => PhaseChanged?.Invoke(phase));
+        hub.On<MapUpdate>(HubNames.Events.MapUpdated, update => MapUpdated?.Invoke(update));
+        hub.On<PlayerSummary>(HubNames.Events.PickWaiting, picker => PickWaiting?.Invoke(picker));
+        hub.On<ScoreEntry[]>(HubNames.Events.ScoreboardUpdated, scores => ScoreboardUpdated?.Invoke(scores));
+        hub.On<GameFinishedDto>(HubNames.Events.GameFinished, finished => GameFinished?.Invoke(finished));
 
         hub.Reconnecting += _ =>
         {
@@ -83,10 +93,22 @@ public sealed class GameConnection : IAsyncDisposable
         _hub?.InvokeAsync(HubNames.Methods.KickPlayer, playerId) ?? Task.CompletedTask;
 
     public Task SendQuestionAsync(SendQuestionRequest request) =>
-        (_hub ?? throw new InvalidOperationException("Connect to a room first.")).InvokeAsync(HubNames.Methods.SendQuestion, request);
+        RequireHub().InvokeAsync(HubNames.Methods.SendQuestion, request);
 
     public Task CloseRoundAsync() =>
-        (_hub ?? throw new InvalidOperationException("Connect to a room first.")).InvokeAsync(HubNames.Methods.CloseRound);
+        RequireHub().InvokeAsync(HubNames.Methods.CloseRound);
+
+    public Task UpdateSettingsAsync(RoomSettings settings) =>
+        RequireHub().InvokeAsync(HubNames.Methods.UpdateSettings, settings);
+
+    public Task StartGameAsync() =>
+        RequireHub().InvokeAsync(HubNames.Methods.StartGame);
+
+    public Task AdvancePhaseAsync(GamePhase targetPhase) =>
+        RequireHub().InvokeAsync(HubNames.Methods.AdvancePhase, targetPhase);
+
+    private HubConnection RequireHub() =>
+        _hub ?? throw new InvalidOperationException("Connect to a room first.");
 
     public async Task StopAsync()
     {

@@ -21,7 +21,18 @@ public sealed class PlayerItem(PlayerSummary dto) : ViewModelBase
         }
     }
 
+    private int? _baseRank = dto.BaseRank;
+    public int? BaseRank
+    {
+        get => _baseRank;
+        set
+        {
+            if (Set(ref _baseRank, value)) Raise(nameof(BaseRankText));
+        }
+    }
+
     public string StatusText => IsConnected ? "online" : "offline";
+    public string BaseRankText => BaseRank is int rank ? $"#{rank}" : "";
 }
 
 /// <summary>Login + room lobby of the game master (this slice: create room, see players join, kick).</summary>
@@ -54,6 +65,13 @@ public sealed class MainViewModel : ViewModelBase
     {
         _copyToClipboard = copyToClipboard ?? (_ => { });
         QuestionBank = new QuestionBankViewModel(questionBankDialogs);
+        PhaseControl = new PhaseControlViewModel(_connection, message => ErrorMessage = message);
+        RoomSettings = new RoomSettingsViewModel(_connection, settings => PhaseControl.ApplySettings(settings));
+        RoomSettings.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RoomSettings.HasUnsavedChanges))
+                PhaseControl.SetHasUnsavedSettings(RoomSettings.HasUnsavedChanges);
+        };
 
         LoginCommand = new AsyncRelayCommand(_ => LoginAsync(), onError: ShowError);
         LogoutCommand = new AsyncRelayCommand(_ => LogoutAsync(), onError: ShowError);
@@ -72,18 +90,54 @@ public sealed class MainViewModel : ViewModelBase
         _connection.PlayerConnectionChanged += p => OnUi(() => Upsert(p));
         _connection.PlayerLeft += p => OnUi(() => Remove(p.Id));
         _connection.RoomClosed += () => OnUi(ClearRoom);
-        _connection.ErrorReceived += e => OnUi(() => ErrorMessage = e.Message);
-        _connection.StatusChanged += s => OnUi(() => { ConnectionStatus = s; Question.ConnectionStatus = s; RefreshRoundCommands(); });
-        _connection.QuestionStarted += q => OnUi(() => { Question.Start(q); _roundOpen = true; AnswerProgress = ""; RefreshRoundCommands(); });
-        _connection.RoundClosed += r => OnUi(() => { Question.Close(r); _roundOpen = false; RefreshRoundCommands(); });
+        _connection.ErrorReceived += e => OnUi(() => ErrorMessage = HostErrorFormatter.FormatMessage(e.Message));
+        _connection.StatusChanged += s => OnUi(() =>
+        {
+            ConnectionStatus = s;
+            Question.ConnectionStatus = s;
+            RoomSettings.SetConnectionState(_connection.IsConnected);
+            PhaseControl.SetConnectionState(_connection.IsConnected);
+            RefreshRoundCommands();
+        });
+        _connection.QuestionStarted += q => OnUi(() =>
+        {
+            Question.Start(q);
+            _roundOpen = true;
+            AnswerProgress = "";
+            PhaseControl.SetRoundOpen(true);
+            RefreshRoundCommands();
+        });
+        _connection.RoundClosed += r => OnUi(() =>
+        {
+            Question.Close(r);
+            _roundOpen = false;
+            PhaseControl.RecordRoundClosed(r);
+            RefreshRoundCommands();
+        });
         _connection.AnswerCountChanged += c => OnUi(() => AnswerProgress = $"Answered {c.Answered}/{c.Total}");
         _connection.ClockSynchronized += (utc, latency) => OnUi(() => Question.SyncClock(utc, latency));
+        _connection.PhaseChanged += phase => OnUi(() =>
+        {
+            RoomSettings.SetPhase(phase);
+            PhaseControl.ApplyPhaseChanged(phase);
+        });
+        _connection.MapUpdated += update => OnUi(() => PhaseControl.ApplyMapUpdated(update));
+        _connection.PickWaiting += picker => OnUi(() => PhaseControl.ApplyPickWaiting(picker));
+        _connection.GameFinished += finished => OnUi(() =>
+        {
+            _roundOpen = false;
+            RefreshRoundCommands();
+            RoomSettings.SetPhase(GamePhase.Results);
+            PhaseControl.ApplyGameFinished(finished);
+        });
     }
 
     public QuestionViewModel Question { get; } = new();
 
     public ObservableCollection<PlayerItem> Players { get; } = [];
     public QuestionBankViewModel QuestionBank { get; }
+    public RoomSettingsViewModel RoomSettings { get; }
+    public PhaseControlViewModel PhaseControl { get; }
 
     public ICommand LoginCommand { get; }
     public ICommand LogoutCommand { get; }
@@ -129,6 +183,7 @@ public sealed class MainViewModel : ViewModelBase
             _copyFeedbackVersion++;
             CopyRoomCodeText = "Copy";
             Raise(nameof(HasRoom));
+            Raise(nameof(HasNoRoom));
             ((AsyncRelayCommand)CloseRoomCommand).RaiseCanExecuteChanged();
             RefreshRoundCommands();
             ((RelayCommand)CopyRoomCodeCommand).RaiseCanExecuteChanged();
@@ -138,6 +193,7 @@ public sealed class MainViewModel : ViewModelBase
     public string JoinUrl { get => _joinUrl; private set => Set(ref _joinUrl, value); }
 
     public bool HasRoom => RoomCode.Length > 0;
+    public bool HasNoRoom => !HasRoom;
     public bool ShowLogin => !_loggedIn;
     public bool ShowRoom => _loggedIn;
     public string PlayerCountText => $"Players ({Players.Count})";
@@ -155,7 +211,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private void OnUi(Action action) => _ui.Post(_ => action(), null);
 
-    private void ShowError(Exception ex) => OnUi(() => ErrorMessage = ex.Message);
+    private void ShowError(Exception ex) => OnUi(() => ErrorMessage = HostErrorFormatter.Format(ex));
 
     private void SetLoggedIn(bool value)
     {
@@ -192,6 +248,8 @@ public sealed class MainViewModel : ViewModelBase
     private async Task LogoutAsync()
     {
         await CloseRoomAsync();
+        RoomSettings.ResetToDefaults();
+        PhaseControl.ClearRoom();
         QuestionBank.Reset();
         SelectedTabIndex = 0;
         _api?.Dispose();
@@ -205,16 +263,22 @@ public sealed class MainViewModel : ViewModelBase
     {
         ErrorMessage = "";
         if (_api is null || _token is null) return;
+        if (!RoomSettings.TryGetForRoomCreation(out var settings)) return;
 
         if (HasRoom) await CloseRoomAsync();
 
-        var room = await _api.CreateRoomAsync();
+        var room = await _api.CreateRoomAsync(settings);
         RoomCode = room.RoomCode;
         JoinUrl = room.JoinUrl;
         Players.Clear();
         Raise(nameof(PlayerCountText));
+        RoomSettings.SetRoomCreated(settings);
+        PhaseControl.SetRoomOpened(settings);
+        PhaseControl.SetPlayerCounts(0, 0);
 
         await _connection.StartAsync(_api.BaseUrl, _token, room.RoomCode);
+        RoomSettings.SetConnectionState(_connection.IsConnected);
+        PhaseControl.SetConnectionState(_connection.IsConnected);
     }
 
     private async Task CloseRoomAsync()
@@ -269,6 +333,8 @@ public sealed class MainViewModel : ViewModelBase
         JoinUrl = "";
         Players.Clear();
         Raise(nameof(PlayerCountText));
+        RoomSettings.ClearRoom();
+        PhaseControl.ClearRoom();
     }
 
     private void ApplyState(RoomStateDto state)
@@ -280,14 +346,24 @@ public sealed class MainViewModel : ViewModelBase
         Players.Clear();
         foreach (var p in state.Players) Players.Add(new PlayerItem(p));
         Raise(nameof(PlayerCountText));
+        RoomSettings.SyncFromRoomState(state);
+        PhaseControl.ApplyRoomState(state);
+        RoomSettings.SetConnectionState(_connection.IsConnected);
+        PhaseControl.SetConnectionState(_connection.IsConnected);
+        SyncPlayerCounts();
     }
 
     private void Upsert(PlayerSummary dto)
     {
         var existing = Players.FirstOrDefault(p => p.Id == dto.Id);
         if (existing is null) Players.Add(new PlayerItem(dto));
-        else existing.IsConnected = dto.Connected;
+        else
+        {
+            existing.IsConnected = dto.Connected;
+            existing.BaseRank = dto.BaseRank;
+        }
         Raise(nameof(PlayerCountText));
+        SyncPlayerCounts();
     }
 
     private void Remove(Guid playerId)
@@ -295,7 +371,11 @@ public sealed class MainViewModel : ViewModelBase
         var existing = Players.FirstOrDefault(p => p.Id == playerId);
         if (existing is not null) Players.Remove(existing);
         Raise(nameof(PlayerCountText));
+        SyncPlayerCounts();
     }
+
+    private void SyncPlayerCounts() =>
+        PhaseControl.SetPlayerCounts(Players.Count, Players.Count(p => p.IsConnected));
 
     public Task ShutdownAsync()
     {

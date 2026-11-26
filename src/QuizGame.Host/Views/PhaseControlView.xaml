@@ -1,0 +1,209 @@
+<UserControl x:Class="QuizGame.Host.Views.PhaseControlView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="StepPillBase" TargetType="Border">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="#E5E7EB" />
+            <Setter Property="BorderBrush" Value="#D1D5DB" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="StepTextBase" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#374151" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+
+        <Style x:Key="StepArrowStyle" TargetType="TextBlock">
+            <Setter Property="Text" Value="→" />
+            <Setter Property="Foreground" Value="#9CA3AF" />
+            <Setter Property="Margin" Value="6,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="#F9FAFB"
+            BorderBrush="#D1D5DB"
+            BorderThickness="1"
+            CornerRadius="4"
+            Padding="12">
+        <StackPanel>
+            <DockPanel LastChildFill="True">
+                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Button Content="Start game"
+                            Command="{Binding StartGameCommand}"
+                            FontWeight="SemiBold"
+                            Padding="12,6"
+                            Margin="0,0,8,0"
+                            ToolTip="Move from Lobby to Base selection once enough connected players have joined" />
+                    <Button Content="Next phase"
+                            Command="{Binding NextPhaseCommand}"
+                            Padding="12,6"
+                            Margin="0,0,8,0"
+                            ToolTip="Advance from Base selection to Conquest" />
+                    <Button Content="End game"
+                            Command="{Binding EndGameCommand}"
+                            Padding="12,6"
+                            ToolTip="End Conquest and show final results" />
+                </WrapPanel>
+
+                <WrapPanel VerticalAlignment="Center">
+                    <!-- 1. Lobby -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLobbyCompleted}" Value="True">
+                                        <Setter Property="Background" Value="#DCFCE7" />
+                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsLobby}" Value="True">
+                                        <Setter Property="Background" Value="#2563EB" />
+                                        <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="1. Lobby">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLobbyCompleted}" Value="True">
+                                            <Setter Property="Foreground" Value="#166534" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsLobby}" Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Style="{StaticResource StepArrowStyle}" />
+
+                    <!-- 2. Base selection -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsBaseSelectionCompleted}" Value="True">
+                                        <Setter Property="Background" Value="#DCFCE7" />
+                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsBaseSelection}" Value="True">
+                                        <Setter Property="Background" Value="#2563EB" />
+                                        <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="2. Base selection">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsBaseSelectionCompleted}" Value="True">
+                                            <Setter Property="Foreground" Value="#166534" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsBaseSelection}" Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Style="{StaticResource StepArrowStyle}" />
+
+                    <!-- 3. Conquest -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsConquestCompleted}" Value="True">
+                                        <Setter Property="Background" Value="#DCFCE7" />
+                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsConquest}" Value="True">
+                                        <Setter Property="Background" Value="#2563EB" />
+                                        <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="3. Conquest">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsConquestCompleted}" Value="True">
+                                            <Setter Property="Foreground" Value="#166534" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsConquest}" Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Style="{StaticResource StepArrowStyle}" />
+
+                    <!-- 4. Results -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsResults}" Value="True">
+                                        <Setter Property="Background" Value="#2563EB" />
+                                        <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="4. Results">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsResults}" Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                </WrapPanel>
+            </DockPanel>
+
+            <TextBlock Text="{Binding StatusGuidance, Mode=OneWay}"
+                       Foreground="#4B5563"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+
+            <Border Background="#FEF3C7"
+                    BorderBrush="#F59E0B"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    Padding="8,5"
+                    Margin="0,8,0,0"
+                    Visibility="{Binding SuggestEndConquest, Converter={StaticResource B2V}}">
+                <TextBlock Text="{Binding ConquestSuggestionText, Mode=OneWay}"
+                           Foreground="#92400E"
+                           FontWeight="SemiBold"
+                           FontSize="12"
+                           TextWrapping="Wrap" />
+            </Border>
+        </StackPanel>
+    </Border>
+</UserControl>
