@@ -1,6 +1,7 @@
 <Window x:Class="QuizGame.Host.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:views="clr-namespace:QuizGame.Host.Views"
         Title="Strategic Quiz – Game Master"
         Width="1040" Height="740" MinWidth="820" MinHeight="580"
@@ -28,13 +29,28 @@
             <TextBlock Text="Password" Margin="0,0,0,2" />
             <PasswordBox PasswordChanged="PasswordBox_PasswordChanged" Padding="6" Margin="0,0,0,16" />
 
-            <Button Content="Log in" Command="{Binding LoginCommand}" IsDefault="True" Padding="12,8" />
+            <Button  Command="{Binding LoginCommand}" IsDefault="True" Padding="12,8">
+
+                <StackPanel Orientation="Horizontal">
+
+                    <icons:PackIconLucide Kind="LogIn" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+
+                    <TextBlock Text="Log in" VerticalAlignment="Center" />
+
+                </StackPanel>
+
+            </Button>
         </StackPanel>
 
         <!-- Logged-in host workspace -->
         <DockPanel Visibility="{Binding ShowRoom, Converter={StaticResource B2V}}">
             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                <Button DockPanel.Dock="Right" Content="Log out" Command="{Binding LogoutCommand}" Padding="14,6" />
+                <Button DockPanel.Dock="Right"  Command="{Binding LogoutCommand}" Padding="14,6">
+                    <StackPanel Orientation="Horizontal">
+                        <icons:PackIconLucide Kind="LogOut" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Log out" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="Signed in as " Foreground="Gray" />
                     <TextBlock Text="{Binding Username, Mode=OneWay}" FontWeight="SemiBold" />
@@ -51,10 +67,30 @@
                         </Grid.RowDefinitions>
 
                         <WrapPanel Grid.Row="0">
-                            <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
-                            <Button Content="Map" Click="OpenMapWindow" Padding="14,8" Margin="0,0,8,0" />
-                            <Button Content="Create room" Command="{Binding CreateRoomCommand}" Padding="14,8" Margin="0,0,8,0" />
-                            <Button Content="Close room" Command="{Binding CloseRoomCommand}" Padding="14,8" />
+                            <Button  Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <icons:PackIconLucide Kind="Projector" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBlock Text="Projector" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button  Click="OpenMapWindow" Padding="14,8" Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <icons:PackIconLucide Kind="Map" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBlock Text="Map" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button  Command="{Binding CreateRoomCommand}" Padding="14,8" Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <icons:PackIconLucide Kind="Plus" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBlock Text="Create room" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button  Command="{Binding CloseRoomCommand}" Padding="14,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <icons:PackIconLucide Kind="DoorClosed" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBlock Text="Close room" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </WrapPanel>
 
                         <views:PhaseControlView Grid.Row="1"
@@ -122,9 +158,14 @@
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <DockPanel Margin="2">
-                                                    <Button DockPanel.Dock="Right" Content="Kick" Padding="10,2"
+                                                    <Button DockPanel.Dock="Right"  Padding="10,2"
                                                             Command="{Binding DataContext.KickCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}" />
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <icons:PackIconLucide Kind="UserMinus" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                            <TextBlock Text="Kick" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
                                                     <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="Gray"
                                                                Margin="0,0,16,0" VerticalAlignment="Center" />
                                                     <Ellipse Width="14" Height="14" Fill="{Binding ColorHex}" Margin="0,0,10,0" />
@@ -165,10 +206,30 @@
                                        VerticalAlignment="Center"
                                        Margin="12,0,0,0" />
                             <WrapPanel>
-                                <Button Content="Send selected question" Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0" />
-                                <Button Content="Close round" Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0" />
-                                <Button Content="Projector" Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0" />
-                                <Button Content="Map" Click="OpenMapWindow" Padding="14,8" Margin="0,0,8,0" />
+                                <Button  Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icons:PackIconLucide Kind="Send" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <TextBlock Text="Send selected question" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button  Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icons:PackIconLucide Kind="CircleStop" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <TextBlock Text="Close round" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button  Click="OpenQuestionWindow" Padding="14,8" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icons:PackIconLucide Kind="Projector" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <TextBlock Text="Projector" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button  Click="OpenMapWindow" Padding="14,8" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icons:PackIconLucide Kind="Map" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <TextBlock Text="Map" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                                 <TextBlock Text="{Binding AnswerProgress}" VerticalAlignment="Center" />
                             </WrapPanel>
                         </DockPanel>
