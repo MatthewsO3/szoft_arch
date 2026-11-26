@@ -43,6 +43,7 @@ public sealed class NullSessionRecorder : ISessionRecorder
     public Task PlayerLeftAsync(Guid sessionId, Guid playerId, CancellationToken ct = default) => Task.CompletedTask;
     public Task SessionEndedAsync(Guid sessionId, CancellationToken ct = default) => Task.CompletedTask;
     public Task RoundClosedAsync(Guid sessionId, RoundRecord round, CancellationToken ct = default) => Task.CompletedTask;
+    public Task TerritoriesChangedAsync(Guid sessionId, IReadOnlyList<TerritoryRecord> territories, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>

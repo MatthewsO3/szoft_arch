@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using QuizGame.Contracts;
@@ -26,22 +25,17 @@ public sealed class RoundCoordinator(
     IHubContext<GameHub> hub,
     ConnectionRegistry registry,
     ISessionRecorder recorder,
+    RoomCommandGate commands,
+    PhaseCoordinator phases,
     TimeProvider time,
     IOptions<RoundOptions> options,
     ILogger<RoundCoordinator> logger)
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, (Guid RoundId, CancellationTokenSource Cts)> _timers = [];
-    private readonly ConditionalWeakTable<GameRoom, SemaphoreSlim> _commands = new();
 
     // Serialize state changes AND their delivery so reconnect snapshots cannot overtake round events.
-    private async Task<T> SerializedAsync<T>(GameRoom room, Func<Task<T>> action)
-    {
-        var gate = _commands.GetValue(room, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
-        try { return await action(); }
-        finally { gate.Release(); }
-    }
+    private Task<T> SerializedAsync<T>(GameRoom room, Func<Task<T>> action) => commands.RunAsync(room, action);
 
     private TimeSpan Grace => TimeSpan.FromMilliseconds(Math.Max(0, options.Value.GraceMilliseconds));
 
@@ -62,6 +56,7 @@ public sealed class RoundCoordinator(
             {
                 StartRoundError.RoundActive => ErrorCodes.RoundInProgress,
                 StartRoundError.NoPlayers => ErrorCodes.NotEnoughPlayers,
+                StartRoundError.InvalidPhase => ErrorCodes.InvalidPhase,
                 _ => ErrorCodes.InvalidRound,
             };
         }
@@ -136,18 +131,24 @@ public sealed class RoundCoordinator(
         CancelTimer(room.Code, closed.Record.RoundId);
         await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.RoundClosed, closed.Result);
         await recorder.RoundClosedAsync(room.SessionId, closed.Record);
+        await phases.OnRoundClosedCoreAsync(room, closed); // base-order round: ask the first player for a base
         return true;
     }
 
     /// <summary>Stops the deadline timer of a room that is being closed or removed.</summary>
-    public void Cancel(string roomCode) => CancelTimer(roomCode, null);
+    public void Cancel(string roomCode)
+    {
+        CancelTimer(roomCode, null);
+        phases.Cancel(roomCode);
+    }
 
-    /// <summary>One caller-specific snapshot restores both open rounds and missed results.</summary>
+    /// <summary>One caller-specific snapshot restores open rounds, missed results and a pending base pick.</summary>
     public Task SendStateAsync(GameRoom room, IClientProxy caller, Guid? playerId) =>
         SerializedAsync(room, async () =>
         {
             await caller.SendAsync(HubNames.Events.RoomState,
                 room.Snapshot(time.GetUtcNow(), playerId, forHost: playerId is null));
+            await phases.SendPickStateCoreAsync(room, caller, playerId);
             return true;
         });
 

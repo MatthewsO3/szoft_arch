@@ -6,12 +6,15 @@ import { loadSession, saveSession, clearSession } from './session.js';
 import { initJoin } from './ui/join.js';
 import { createLobby } from './ui/lobby.js';
 import { createQuestion } from './ui/question.js';
+import { createMap } from './ui/map.js';
+import { GamePhase } from './hubNames.js';
 import { createClock } from './util/timer.js';
 
 const screens = {
   join: document.getElementById('screen-join'),
   lobby: document.getElementById('screen-lobby'),
   question: document.getElementById('screen-question'),
+  map: document.getElementById('screen-map'),
 };
 const header = document.getElementById('header');
 const meChip = document.getElementById('me-chip');
@@ -30,6 +33,10 @@ const question = createQuestion({
   playerId: () => session?.player.id,
 });
 
+const map = createMap({ pick: (i) => hub.pickTerritory(i), playerId: () => session?.player.id });
+
+map.setClock((deadline) => clock.remaining(deadline));
+
 async function syncClock() {
   const current = hub;
   if (!current?.isConnected) return;
@@ -44,9 +51,14 @@ function applyState(state) {
   clock.sync(state.serverUtcNow);
   lobby.setState(state);
   question.reset();
+  
+  map.setState(state);
   if (state.playerQuestion) {
     question.start(state.playerQuestion, state.hasAnswered);
     show('question');
+  } else if (state.phase !== GamePhase.Lobby && map.hasMap
+      && (state.currentPick || state.phase !== GamePhase.BaseSelection || !state.lastRoundResult)) {
+    show('map');
   } else if (state.lastRoundResult) {
     question.close(state.lastRoundResult);
     show('question');
@@ -78,6 +90,7 @@ async function backToJoin(message) {
   try { await old?.stop(); } catch { /* ignore */ }
   lobby.reset();
   question.reset();
+  map.reset();
   show('join');
   join.message(message ?? '');
   join.focus();
@@ -106,6 +119,10 @@ async function connect() {
     onState: setConnState,
     RoomState: applyState,
     QuestionStarted: (data) => { question.start(data); show('question'); },
+    MapUpdated: (data) => { map.update(data); },
+    PickRequested: (req) => { map.pickRequested(req); show('map'); },
+    PickWaiting: (player) => { map.pickWaiting(player); show('map'); },
+    GameFinished: (data) => { map.gameFinished(data); show('map'); },
     RoundClosed: (data) => { if (question.close(data)) show('question'); },
     PlayerJoined: (player) => lobby.upsert(player),
     PlayerConnectionChanged: (player) => lobby.upsert(player),

@@ -39,7 +39,11 @@ public sealed partial class GameRoom
         public DateTimeOffset JoinedAt { get; } = joinedAt;
         public bool IsConnected { get; set; }
 
-        public PlayerSummary ToSummary() => new() { Id = Id, Name = Name, ColorHex = ColorHex, Connected = IsConnected };
+        /// <summary>1-based pick order from the base-selection round; null until it has been played.</summary>
+        public int? BaseRank { get; set; }
+
+        public PlayerSummary ToSummary() =>
+            new() { Id = Id, Name = Name, ColorHex = ColorHex, Connected = IsConnected, BaseRank = BaseRank };
     }
 
     private readonly object _gate = new();
@@ -61,7 +65,7 @@ public sealed partial class GameRoom
     public string Code { get; }
     public Guid SessionId { get; }
     public Guid GameMasterId { get; }
-    public RoomSettings Settings { get; }
+    public RoomSettings Settings { get; private set; }
     public int MaxPlayers { get; }
     public DateTimeOffset CreatedAt { get; }
 
@@ -150,12 +154,15 @@ public sealed partial class GameRoom
                 Phase = _phase,
                 Settings = Settings,
                 Players = _players.Select(p => p.ToSummary()).ToList(),
+                Map = _map?.ToDto(),
                 CurrentRound = _round?.ToCurrentDto(),
+                CurrentPick = _pick is { } pick ? PickDto(pick, playerId) : null,
                 PlayerQuestion = playerId is { } id && _round?.Info.ParticipantIds.Contains(id) == true ? _round.Info.ForPlayer() : null,
                 HostQuestion = forHost && _round is { } r ? r.Info.ForHost() : null,
                 HasAnswered = playerId is { } player && _round?.HasAnswered(player) == true,
                 AnswerCount = forHost && _round is { } active ? new AnswerCount(active.AnswerCount, active.Participants.Count) : null,
                 LastRoundResult = _lastRoundResult,
+                Scoreboard = ScoreboardCore(),
                 ServerUtcNow = now,
             };
         }

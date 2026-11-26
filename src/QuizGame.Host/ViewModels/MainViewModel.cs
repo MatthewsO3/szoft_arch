@@ -95,6 +95,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             ConnectionStatus = s;
             Question.ConnectionStatus = s;
+            Map.ConnectionStatus = s;
             RoomSettings.SetConnectionState(_connection.IsConnected);
             PhaseControl.SetConnectionState(_connection.IsConnected);
             RefreshRoundCommands();
@@ -119,20 +120,23 @@ public sealed class MainViewModel : ViewModelBase
         _connection.PhaseChanged += phase => OnUi(() =>
         {
             RoomSettings.SetPhase(phase);
+            Map.ApplyPhaseChanged(phase);
             PhaseControl.ApplyPhaseChanged(phase);
         });
-        _connection.MapUpdated += update => OnUi(() => PhaseControl.ApplyMapUpdated(update));
-        _connection.PickWaiting += picker => OnUi(() => PhaseControl.ApplyPickWaiting(picker));
+        _connection.MapUpdated += update => OnUi(() => { Map.ApplyMapUpdated(update); PhaseControl.ApplyMapUpdated(update); });
+        _connection.PickWaiting += picker => OnUi(() => { Map.ApplyPickWaiting(picker); PhaseControl.ApplyPickWaiting(picker); });
         _connection.GameFinished += finished => OnUi(() =>
         {
             _roundOpen = false;
             RefreshRoundCommands();
             RoomSettings.SetPhase(GamePhase.Results);
+            Map.ApplyGameFinished(finished);
             PhaseControl.ApplyGameFinished(finished);
         });
     }
 
     public QuestionViewModel Question { get; } = new();
+    public MapViewModel Map { get; } = new();
 
     public ObservableCollection<PlayerItem> Players { get; } = [];
     public QuestionBankViewModel QuestionBank { get; }
@@ -335,6 +339,7 @@ public sealed class MainViewModel : ViewModelBase
         Raise(nameof(PlayerCountText));
         RoomSettings.ClearRoom();
         PhaseControl.ClearRoom();
+        Map.Clear();
     }
 
     private void ApplyState(RoomStateDto state)
@@ -347,6 +352,7 @@ public sealed class MainViewModel : ViewModelBase
         foreach (var p in state.Players) Players.Add(new PlayerItem(p));
         Raise(nameof(PlayerCountText));
         RoomSettings.SyncFromRoomState(state);
+        Map.ApplyRoomState(state);
         PhaseControl.ApplyRoomState(state);
         RoomSettings.SetConnectionState(_connection.IsConnected);
         PhaseControl.SetConnectionState(_connection.IsConnected);
@@ -355,6 +361,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private void Upsert(PlayerSummary dto)
     {
+        Map.UpsertPlayer(dto);
         var existing = Players.FirstOrDefault(p => p.Id == dto.Id);
         if (existing is null) Players.Add(new PlayerItem(dto));
         else
@@ -368,6 +375,7 @@ public sealed class MainViewModel : ViewModelBase
 
     private void Remove(Guid playerId)
     {
+        Map.RemovePlayer(playerId);
         var existing = Players.FirstOrDefault(p => p.Id == playerId);
         if (existing is not null) Players.Remove(existing);
         Raise(nameof(PlayerCountText));

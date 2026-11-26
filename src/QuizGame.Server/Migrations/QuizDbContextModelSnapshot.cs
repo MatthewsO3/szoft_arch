@@ -308,6 +308,41 @@ namespace QuizGame.Server.Migrations
                     b.ToTable("Rounds", (string)null);
                 });
 
+            modelBuilder.Entity("QuizGame.Server.Data.TerritoryEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Col")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsBase")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("OwnerPlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Row")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "Index")
+                        .IsUnique();
+
+                    b.ToTable("Territories", (string)null);
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.AnswerEntity", b =>
                 {
                     b.HasOne("QuizGame.Server.Data.RoundEntity", "Round")
@@ -334,17 +369,6 @@ namespace QuizGame.Server.Migrations
                 {
                     b.HasOne("QuizGame.Server.Data.GameSessionEntity", "Session")
                         .WithMany("Players")
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Session");
-                });
-
-            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
-                {
-                    b.HasOne("QuizGame.Server.Data.GameSessionEntity", "Session")
-                        .WithMany("Rounds")
                         .HasForeignKey("SessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -379,6 +403,28 @@ namespace QuizGame.Server.Migrations
                     b.Navigation("Question");
                 });
 
+            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
+                {
+                    b.HasOne("QuizGame.Server.Data.GameSessionEntity", "Session")
+                        .WithMany("Rounds")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.TerritoryEntity", b =>
+                {
+                    b.HasOne("QuizGame.Server.Data.GameSessionEntity", "Session")
+                        .WithMany("Territories")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+                });
+
             modelBuilder.Entity("QuizGame.Server.Data.CategoryEntity", b =>
                 {
                     b.Navigation("Questions");
@@ -389,16 +435,18 @@ namespace QuizGame.Server.Migrations
                     b.Navigation("Players");
 
                     b.Navigation("Rounds");
-                });
 
-            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
-                {
-                    b.Navigation("Answers");
+                    b.Navigation("Territories");
                 });
 
             modelBuilder.Entity("QuizGame.Server.Data.QuestionEntity", b =>
                 {
                     b.Navigation("Options");
+                });
+
+            modelBuilder.Entity("QuizGame.Server.Data.RoundEntity", b =>
+                {
+                    b.Navigation("Answers");
                 });
 #pragma warning restore 612, 618
         }

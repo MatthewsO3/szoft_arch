@@ -29,6 +29,12 @@ public static class ErrorCodes
     public const string InvalidAnswer = "InvalidAnswer";
     public const string NotParticipant = "NotParticipant";
 
+    // Phases and base selection (plan §4.2)
+    public const string InvalidTransition = "InvalidTransition";
+    public const string BaseSelectionIncomplete = "BaseSelectionIncomplete";
+    public const string NotYourPick = "NotYourPick";
+    public const string InvalidPick = "InvalidPick";
+
     // Question bank (REST)
     public const string CategoryNotFound = "CategoryNotFound";
     public const string CategoryNameTaken = "CategoryNameTaken";
