@@ -6,6 +6,63 @@ namespace QuizGame.Host.Tests;
 public class QuestionBankViewModelTests
 {
     [Fact]
+    public async Task PhaseRestrictions_UpdateSelectionAndSurviveReloadAndManagementMode()
+    {
+        var api = new FakeQuestionBankApi
+        {
+            GetCategoriesHandler = () => [],
+            GetQuestionsHandler = q => new PagedResult<QuestionDto>(
+                [FakeQuestionBankApi.SampleQuestion(), FakeQuestionBankApi.SampleEstimationQuestion()],
+                q.Page, q.PageSize, 2)
+        };
+        var vm = new QuestionBankViewModel(new FakeQuestionBankDialogService());
+        vm.AttachApi(api);
+        vm.SetGamePhase(GamePhase.Conquest);
+        await vm.EnsureLoadedAsync();
+        Assert.True(vm.Questions[0].IsSelectable);
+        Assert.False(vm.Questions[1].IsSelectable);
+        vm.SelectedQuestion = vm.Questions[1];
+        Assert.Null(vm.SelectedQuestion);
+        vm.SelectedQuestion = vm.Questions[0];
+        Assert.True(vm.CanSendSelectedQuestion);
+
+        vm.SetGamePhase(GamePhase.Expansion);
+        Assert.Null(vm.SelectedQuestion);
+        Assert.False(vm.Questions[0].IsSelectable);
+        Assert.True(vm.Questions[1].IsSelectable);
+        vm.SelectedQuestion = vm.Questions[1];
+        Assert.True(vm.CanSendSelectedQuestion);
+        await vm.RefreshAsync();
+        Assert.False(vm.Questions[0].IsSelectable);
+
+        vm.ManageAllQuestions = true;
+        vm.SelectedQuestion = vm.Questions[0];
+        Assert.NotNull(vm.SelectedQuestion);
+        Assert.True(vm.EditQuestionCommand.CanExecute(null));
+        Assert.False(vm.CanSendSelectedQuestion);
+        vm.ManageAllQuestions = false;
+        Assert.Null(vm.SelectedQuestion);
+
+        vm.SetGamePhase(GamePhase.Duel);
+        Assert.True(vm.Questions[0].IsSelectable);
+        Assert.False(vm.Questions[1].IsSelectable);
+        vm.SetGamePhase(null);
+        Assert.All(vm.Questions, question => Assert.True(question.IsSelectable));
+        vm.SelectedQuestion = vm.Questions[0];
+        Assert.False(vm.CanSendSelectedQuestion);
+    }
+
+    [Fact]
+    public void InvalidRound_ShowsActionableMessageInsteadOfHubException()
+    {
+        var message = HostErrorFormatter.FormatMessage(
+            "An unexpected error occurred invoking 'SendQuestion' on the server. HubException: InvalidRound");
+        Assert.Contains("Conquest and Duel require multiple-choice", message);
+        Assert.Contains("Expansion requires estimation", message);
+        Assert.DoesNotContain("HubException", message);
+    }
+
+    [Fact]
     public async Task EnsureLoadedAsync_LoadsOnceLazilyAfterAttach()
     {
         var api = new FakeQuestionBankApi

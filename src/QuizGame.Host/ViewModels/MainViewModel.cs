@@ -66,6 +66,11 @@ public sealed class MainViewModel : ViewModelBase
         _copyToClipboard = copyToClipboard ?? (_ => { });
         QuestionBank = new QuestionBankViewModel(questionBankDialogs);
         PhaseControl = new PhaseControlViewModel(_connection, message => ErrorMessage = message);
+        PhaseControl.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PhaseControl.Phase) or nameof(PhaseControl.HasRoom))
+                QuestionBank.SetGamePhase(PhaseControl.HasRoom ? PhaseControl.Phase : null);
+        };
         RoomSettings = new RoomSettingsViewModel(_connection, settings => PhaseControl.ApplySettings(settings));
         RoomSettings.PropertyChanged += (_, e) =>
         {
@@ -79,10 +84,10 @@ public sealed class MainViewModel : ViewModelBase
         CloseRoomCommand = new AsyncRelayCommand(_ => CloseRoomAsync(), _ => HasRoom, ShowError);
         KickCommand = new AsyncRelayCommand(p => KickAsync((PlayerItem)p!), p => p is PlayerItem, ShowError);
         SendQuestionCommand = new AsyncRelayCommand(_ => SendQuestionAsync(),
-            _ => HasRoom && _connection.IsConnected && !_roundOpen && QuestionBank.SelectedQuestion is not null, ShowError);
+            _ => HasRoom && _connection.IsConnected && !_roundOpen && QuestionBank.CanSendSelectedQuestion, ShowError);
         CloseRoundCommand = new AsyncRelayCommand(_ => _connection.CloseRoundAsync(),
             _ => HasRoom && _connection.IsConnected && _roundOpen, ShowError);
-        QuestionBank.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(QuestionBank.SelectedQuestion)) RefreshRoundCommands(); };
+        QuestionBank.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(QuestionBank.CanSendSelectedQuestion)) RefreshRoundCommands(); };
         CopyRoomCodeCommand = new RelayCommand(_ => CopyRoomCode(), _ => HasRoom);
 
         _connection.RoomStateReceived += s => OnUi(() => ApplyState(s));
@@ -162,6 +167,11 @@ public sealed class MainViewModel : ViewModelBase
     {
         var selected = QuestionBank.SelectedQuestion ?? throw new InvalidOperationException("Select a question first.");
         ErrorMessage = "";
+        if (!QuestionBank.CanSendSelectedQuestion)
+        {
+            ErrorMessage = QuestionBank.QuestionTypeGuidance;
+            return Task.CompletedTask;
+        }
         // The round kind follows the current phase (Conquest / Expansion / Duel), decided server-side.
         return _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
     }
