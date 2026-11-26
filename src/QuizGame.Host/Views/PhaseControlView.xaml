@@ -44,11 +44,11 @@
                             Command="{Binding NextPhaseCommand}"
                             Padding="12,6"
                             Margin="0,0,8,0"
-                            ToolTip="Advance from Base selection to Conquest" />
+                            ToolTip="Advance to the next phase when no round or territory pick is pending" />
                     <Button Content="End game"
                             Command="{Binding EndGameCommand}"
                             Padding="12,6"
-                            ToolTip="End Conquest and show final results" />
+                            ToolTip="End Duel early and show final results" />
                 </WrapPanel>
 
                 <WrapPanel VerticalAlignment="Center">
@@ -157,7 +157,77 @@
 
                     <TextBlock Style="{StaticResource StepArrowStyle}" />
 
-                    <!-- 4. Results -->
+                    <!-- 4. Expansion -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsExpansionCompleted}" Value="True">
+                                        <Setter Property="Background" Value="#DCFCE7" />
+                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsExpansion}" Value="True">
+                                        <Setter Property="Background" Value="#2563EB" />
+                                        <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="4. Expansion">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsExpansionCompleted}" Value="True">
+                                            <Setter Property="Foreground" Value="#166534" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsExpansion}" Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Style="{StaticResource StepArrowStyle}" />
+
+                    <!-- 5. Duel -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDuelCompleted}" Value="True">
+                                        <Setter Property="Background" Value="#DCFCE7" />
+                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsDuel}" Value="True">
+                                        <Setter Property="Background" Value="#2563EB" />
+                                        <Setter Property="BorderBrush" Value="#1D4ED8" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="5. Duel">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDuelCompleted}" Value="True">
+                                            <Setter Property="Foreground" Value="#166534" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsDuel}" Value="True">
+                                            <Setter Property="Foreground" Value="White" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Style="{StaticResource StepArrowStyle}" />
+
+                    <!-- 6. Results -->
                     <Border>
                         <Border.Style>
                             <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
@@ -169,7 +239,7 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <TextBlock Text="4. Results">
+                        <TextBlock Text="6. Results">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
                                     <Style.Triggers>

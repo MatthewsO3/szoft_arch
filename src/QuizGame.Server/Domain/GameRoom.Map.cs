@@ -190,6 +190,25 @@ public sealed partial class GameRoom
         }
     }
 
+    /// <summary>The next phase when gameplay is complete. Never interrupts a round or territory pick.</summary>
+    public GamePhase? NextAutomaticPhase()
+    {
+        lock (_gate)
+        {
+            if (_round is not null || _pick is not null || _pickQueue.Count > 0 || _claims.Count > 0)
+                return null;
+            var mapFull = _map is { } map && MapService.FreeTerritories(map).Count == 0;
+            return _phase switch
+            {
+                GamePhase.BaseSelection when _basesComplete => GamePhase.Conquest,
+                GamePhase.Conquest when PhaseRoundsExhausted || mapFull => GamePhase.Expansion,
+                GamePhase.Expansion when mapFull => GamePhase.Duel,
+                GamePhase.Duel when PhaseRoundsExhausted || OneBaseHolderRemains() => GamePhase.Results,
+                _ => null
+            };
+        }
+    }
+
     /// <summary>Final standings and map for <c>GameFinished</c>; ties on score share a rank.</summary>
     public GameFinishedDto BuildGameFinished()
     {
