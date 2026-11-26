@@ -29,6 +29,50 @@ public sealed class QuestionBankViewModel : ViewModelBase
     private QuestionItemViewModel? _selectedQuestion;
     private bool _isLoading;
     private string _errorMessage = "";
+    private GamePhase? _gamePhase;
+    private bool _manageAllQuestions;
+
+    public QuestionType? RequiredQuestionType => _gamePhase switch
+    {
+        GamePhase.Conquest or GamePhase.Duel => QuestionType.MultipleChoice,
+        GamePhase.Expansion => QuestionType.Estimation,
+        _ => null
+    };
+
+    public string QuestionTypeGuidance => RequiredQuestionType switch
+    {
+        QuestionType.MultipleChoice => $"{_gamePhase} requires a multiple-choice question. Estimation questions cannot be sent.",
+        QuestionType.Estimation => "Expansion requires an estimation question. Multiple-choice questions cannot be sent.",
+        _ => "Questions can be sent during Conquest, Expansion or Duel."
+    };
+
+    public bool ManageAllQuestions
+    {
+        get => _manageAllQuestions;
+        set
+        {
+            if (Set(ref _manageAllQuestions, value)) UpdateQuestionAvailability();
+        }
+    }
+
+    public bool CanSendSelectedQuestion => SelectedQuestion is { } question
+        && RequiredQuestionType is { } required && question.Type == required;
+
+    public void SetGamePhase(GamePhase? phase)
+    {
+        _gamePhase = phase;
+        Raise(nameof(RequiredQuestionType));
+        Raise(nameof(QuestionTypeGuidance));
+        UpdateQuestionAvailability();
+    }
+
+    private void UpdateQuestionAvailability()
+    {
+        foreach (var question in Questions)
+            question.IsSelectable = ManageAllQuestions || RequiredQuestionType is null || question.Type == RequiredQuestionType;
+        if (SelectedQuestion is { IsSelectable: false }) SelectedQuestion = null;
+        Raise(nameof(CanSendSelectedQuestion));
+    }
 
     public QuestionBankViewModel(IQuestionBankDialogService dialogs)
     {
@@ -199,8 +243,12 @@ public sealed class QuestionBankViewModel : ViewModelBase
         get => _selectedQuestion;
         set
         {
+            if (value is { IsSelectable: false }) value = null;
             if (Set(ref _selectedQuestion, value))
+            {
                 RaiseSelectionCommands();
+                Raise(nameof(CanSendSelectedQuestion));
+            }
         }
     }
 
@@ -462,6 +510,7 @@ public sealed class QuestionBankViewModel : ViewModelBase
                 Questions.Add(new QuestionItemViewModel(item, catName));
             }
 
+            UpdateQuestionAvailability();
             TotalCount = result.TotalCount;
             if (result.Page > 0)
                 Page = result.Page;

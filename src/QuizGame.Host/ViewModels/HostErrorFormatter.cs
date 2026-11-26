@@ -7,6 +7,7 @@ public static class HostErrorFormatter
 {
     private static readonly (string Token, string Message)[] ErrorMappings =
     [
+        (ErrorCodes.InvalidRound, "This question cannot be used for the current round. Conquest and Duel require multiple-choice questions; Expansion requires estimation questions. If the type is correct, check the question's answer data and the duel target."),
         (ErrorCodes.NotEnoughPlayers, "Not enough connected players to start the game."),
         (ErrorCodes.InvalidPhase, "This action is not allowed in the current phase."),
         ("InvalidTransition", "That phase transition is not allowed."),
