@@ -7,6 +7,7 @@
         <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,0,3" />
         </Style>
 
@@ -146,7 +147,7 @@
                 <CheckBox Content="Disallow adjacent bases"
                           IsChecked="{Binding DisallowAdjacentBases, Mode=TwoWay}"
                           IsEnabled="{Binding CanEdit}" VerticalAlignment="Center" />
-                <controls:HelpTooltip AutomationProperties.Name="About adjacent bases"
+                <controls:HelpTooltip AutomationProperties.Name="About adjacent bases" Margin="3,0,0,0"
                                       Text="Bases cannot share an edge unless no separated free tile remains; diagonal neighbours are allowed." />
             </StackPanel>
 
