@@ -142,6 +142,21 @@
                 <DataGrid.RowStyle>
                     <Style TargetType="DataGridRow">
                         <Setter Property="IsEnabled" Value="{Binding IsSelectable}" />
+                        <!-- Context menus live outside the window's visual tree; pass the command through the row. -->
+                        <Setter Property="Tag" Value="{Binding DataContext.SendQuestionCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                        <EventSetter Event="ContextMenuOpening" Handler="QuestionRow_ContextMenuOpening" />
+                        <Setter Property="ContextMenu">
+                            <Setter.Value>
+                                <ContextMenu>
+                                    <MenuItem Header="Send question"
+                                              Command="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                                        <MenuItem.Icon>
+                                            <icons:PackIconLucide Kind="Send" Width="16" Height="16" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </Setter.Value>
+                        </Setter>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsSelectable}" Value="False">
                                 <Setter Property="Opacity" Value="0.45" />

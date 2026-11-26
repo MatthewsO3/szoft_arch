@@ -7,13 +7,42 @@
         Width="1040" Height="740" MinWidth="820" MinHeight="580"
         WindowStartupLocation="CenterScreen">
 
-    <DockPanel Margin="24">
-        <!-- Status bar -->
-        <DockPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
-            <TextBlock DockPanel.Dock="Left" Text="{Binding ConnectionStatus}" Foreground="Gray" />
-            <TextBlock Text="{Binding ErrorMessage}" Foreground="Firebrick" TextWrapping="Wrap"
-                       HorizontalAlignment="Right" TextAlignment="Right" />
-        </DockPanel>
+    <DockPanel Margin="24,16,24,16">
+        <!-- Account and connection header -->
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding ConnectionStatus}" Foreground="Gray" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                        Visibility="{Binding ShowRoom, Converter={StaticResource B2V}}">
+                <TextBlock Text="Signed in as " Foreground="Gray" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Username, Mode=OneWay}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button Command="{Binding LogoutCommand}" Padding="10,4" Margin="12,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <icons:PackIconLucide Kind="LogOut" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Log out" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding ErrorMessage}" Foreground="Firebrick" TextWrapping="Wrap"
+                       HorizontalAlignment="Right" TextAlignment="Right">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
 
         <!-- Login -->
         <StackPanel Visibility="{Binding ShowLogin, Converter={StaticResource B2V}}"
@@ -44,24 +73,25 @@
 
         <!-- Logged-in host workspace -->
         <DockPanel Visibility="{Binding ShowRoom, Converter={StaticResource B2V}}">
-            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                <Button DockPanel.Dock="Right"  Command="{Binding LogoutCommand}" Padding="14,6">
-                    <StackPanel Orientation="Horizontal">
-                        <icons:PackIconLucide Kind="LogOut" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBlock Text="Log out" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Signed in as " Foreground="Gray" />
-                    <TextBlock Text="{Binding Username, Mode=OneWay}" FontWeight="SemiBold" />
-                </StackPanel>
-            </DockPanel>
+            <views:PhaseControlView DockPanel.Dock="Bottom"
+                                    DataContext="{Binding PhaseControl}"
+                                    IsEnabled="{Binding HasRoom}"
+                                    Margin="0,16,0,0">
+                <views:PhaseControlView.Style>
+                    <Style TargetType="views:PhaseControlView">
+                        <Style.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </views:PhaseControlView.Style>
+            </views:PhaseControlView>
 
             <TabControl SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
                 <TabItem Header="Room / Lobby">
                     <Grid Margin="12">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
@@ -93,12 +123,7 @@
                             </Button>
                         </WrapPanel>
 
-                        <views:PhaseControlView Grid.Row="1"
-                                                DataContext="{Binding PhaseControl}"
-                                                Visibility="{Binding HasRoom, Converter={StaticResource B2V}}"
-                                                Margin="0,12,0,0" />
-
-                        <Grid Grid.Row="2" Margin="0,12,0,0">
+                        <Grid Grid.Row="1" Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="16" />

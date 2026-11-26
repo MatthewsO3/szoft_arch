@@ -14,6 +14,19 @@ public partial class QuestionBankView : UserControl
         InitializeComponent();
     }
 
+    private void QuestionRow_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not DataGridRow { IsEnabled: true } row)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // Send the row that opened the menu, even if another question was selected before right-clicking.
+        row.IsSelected = true;
+        row.Focus();
+    }
+
     private void QuestionsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (!IsClickOnDataGridRow(e.OriginalSource as DependencyObject))
