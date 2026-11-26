@@ -7,6 +7,8 @@ public static class RoomSettingsRules
 {
     public static bool IsValid(RoomSettings s) =>
         Enum.IsDefined(s.MapPreset) &&
-        s.TerritoryValue > 0 && s.BaseValue > 0 && s.WinnersPerRound >= 1 && s.MinPlayers >= 1 &&
-        s.PickTimeoutSeconds > 0 && s.DefaultQuestionSeconds > 0 && s.SuggestedMaxRounds >= 1;
+        s.TerritoryValue > 0 && s.BaseValue > 0 && s.BaseHealth >= 1 &&
+        s.ConquestRounds >= 1 && s.DuelRounds >= 1 &&
+        s.DefenderBonus >= 0 && s.DrawBonus >= 0 && s.MinPlayers >= 1 &&
+        s.PickTimeoutSeconds > 0 && s.DefaultQuestionSeconds > 0;
 }

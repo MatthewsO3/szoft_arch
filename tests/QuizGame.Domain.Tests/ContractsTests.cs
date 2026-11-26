@@ -12,7 +12,9 @@ public class ContractsTests
         Assert.Equal(0, (int)GamePhase.Lobby);
         Assert.Equal(1, (int)GamePhase.BaseSelection);
         Assert.Equal(2, (int)GamePhase.Conquest);
-        Assert.Equal(3, (int)GamePhase.Results);
+        Assert.Equal(3, (int)GamePhase.Expansion);
+        Assert.Equal(4, (int)GamePhase.Duel);
+        Assert.Equal(5, (int)GamePhase.Results);
     }
 
     [Fact]

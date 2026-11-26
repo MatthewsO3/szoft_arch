@@ -9,7 +9,7 @@ export const Methods = Object.freeze({
   AdvancePhase: 'AdvancePhase',
   SendQuestion: 'SendQuestion',
   CloseRound: 'CloseRound',
-  ConfirmBattle: 'ConfirmBattle',
+  ConfirmDuel: 'ConfirmDuel',
   SubmitAnswer: 'SubmitAnswer',
   PickTerritory: 'PickTerritory',
   NominateTarget: 'NominateTarget',
@@ -26,8 +26,8 @@ export const Events = Object.freeze({
   PhaseChanged: 'PhaseChanged',
   MapUpdated: 'MapUpdated',
   QuestionStarted: 'QuestionStarted',
-  BattleAnnounced: 'BattleAnnounced',
-  BattleNominated: 'BattleNominated',
+  DuelAnnounced: 'DuelAnnounced',
+  DuelNominated: 'DuelNominated',
   AnswerCountChanged: 'AnswerCountChanged',
   RoundClosed: 'RoundClosed',
   PickRequested: 'PickRequested',
@@ -62,20 +62,25 @@ export const ErrorCodes = Object.freeze({
   NotParticipant: 'NotParticipant',
   InvalidTransition: 'InvalidTransition',
   BaseSelectionIncomplete: 'BaseSelectionIncomplete',
+  PhaseNotComplete: 'PhaseNotComplete',
   NotYourPick: 'NotYourPick',
   InvalidPick: 'InvalidPick',
   InvalidTarget: 'InvalidTarget',
   NoNomination: 'NoNomination',
+  NotYourTurn: 'NotYourTurn',
 });
 
-// RoundKind / QuestionType are serialized as numbers (QuizGame.Contracts.RoundKind / QuestionType).
-export const RoundKind = Object.freeze({ BaseOrder: 0, Grab: 1, Battle: 2 });
+// RoundKind / QuestionType / PickPurpose are serialized as numbers.
+export const RoundKind = Object.freeze({ Conquest: 0, Expansion: 1, Duel: 2 });
 export const QuestionType = Object.freeze({ MultipleChoice: 0, Estimation: 1 });
+export const PickPurpose = Object.freeze({ Base: 0, ConquestClaim: 1, Expansion: 2, DuelTarget: 3 });
 
 // GamePhase is serialized as its numeric value (QuizGame.Contracts.GamePhase).
 export const GamePhase = Object.freeze({
   Lobby: 0,
   BaseSelection: 1,
   Conquest: 2,
-  Results: 3,
+  Expansion: 3,
+  Duel: 4,
+  Results: 5,
 });

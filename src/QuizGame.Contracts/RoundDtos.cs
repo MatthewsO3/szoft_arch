@@ -6,15 +6,13 @@ public sealed record QuestionForHost(Guid RoundId, QuestionDto Question, DateTim
 /// <summary>Returned by SubmitAnswer only after the server has recorded the answer.</summary>
 public sealed record AnswerAccepted(Guid RoundId);
 
-/// <summary>Args for the host opening a round (plan §6.3 SendQuestion).</summary>
+/// <summary>
+/// Args for the host opening a round (plan §6.3 SendQuestion). The round kind comes from the phase, so only the
+/// question id is needed; a Duel also carries the attacker's confirmed target (set by the server from the nomination).
+/// </summary>
 public sealed record SendQuestionRequest
 {
     public Guid QuestionId { get; init; }
-    public RoundKind Kind { get; init; }
-
-    /// <summary>Battle rounds only: who attacks and the territory under attack.</summary>
-    public Guid? AttackerId { get; init; }
-    public int? TargetTerritoryIndex { get; init; }
 }
 
 /// <summary>Question pushed to players: no correct answer (plan §6.3 rule).</summary>
@@ -52,6 +50,12 @@ public sealed record AnswerResult
 
     /// <summary>Absolute distance from the correct number (estimation).</summary>
     public decimal? Distance { get; init; }
+
+    /// <summary>The territory this player claimed and kept this round, if any (Conquest), or was handed (Expansion / Duel).</summary>
+    public int? WonTerritoryIndex { get; init; }
+
+    /// <summary>Bonus points this player earned this round (Duel defender / draw), if any.</summary>
+    public int? BonusAwarded { get; init; }
 }
 
 /// <summary>Round result broadcast to the room (plan §6.3 RoundClosed).</summary>
@@ -63,21 +67,37 @@ public sealed record RoundClosedDto
     public char? CorrectOption { get; init; }
     public decimal? CorrectNumber { get; init; }
 
-    /// <summary>Winners in order (one for a battle; WinnersPerRound for a grab).</summary>
+    /// <summary>Players who won a territory this round.</summary>
     public IReadOnlyList<Guid> WinnerPlayerIds { get; init; } = [];
 }
 
-/// <summary>Sent to the current picker (plan §6.3 PickRequested).</summary>
-public sealed record PickRequest(IReadOnlyList<int> ValidTerritoryIndices, DateTimeOffset PickDeadlineUtc);
+/// <summary>Sent to the current picker/claimer (plan §6.3 PickRequested). The purpose depends on the phase.</summary>
+public sealed record PickRequest(IReadOnlyList<int> ValidTerritoryIndices, DateTimeOffset PickDeadlineUtc, PickPurpose Purpose);
 
-/// <summary>Spectator info for a battle the recipient is not part of (plan §6.3 BattleAnnounced).</summary>
-public sealed record BattleAnnouncement(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
+/// <summary>Why a player is being asked to choose a territory.</summary>
+public enum PickPurpose
+{
+    /// <summary>BaseSelection: the chosen tile becomes the player's base.</summary>
+    Base,
 
-/// <summary>Host-only info that an attacker has nominated a battle target, awaiting confirmation (plan §4.2, D3).</summary>
-public sealed record BattleNominationDto(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
+    /// <summary>Conquest: the chosen tile is claimed; it is only won if the player then answers the question correctly.</summary>
+    ConquestClaim,
 
-/// <summary>Args for the host confirming a nominated battle (plan §4.2, D3): the estimation question to duel with.</summary>
-public sealed record ConfirmBattleRequest
+    /// <summary>Expansion: the estimation winner takes the chosen free tile.</summary>
+    Expansion,
+
+    /// <summary>Duel: the attacker chooses an adjacent enemy tile to attack.</summary>
+    DuelTarget
+}
+
+/// <summary>Spectator info for a duel the recipient is not part of (plan §6.3).</summary>
+public sealed record DuelAnnouncement(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
+
+/// <summary>Host-only info that the active player has nominated a duel target, awaiting confirmation (plan §4.2).</summary>
+public sealed record DuelNominationDto(Guid AttackerId, Guid DefenderId, int TargetTerritoryIndex);
+
+/// <summary>Args for the host confirming a nominated duel (plan §4.2): the multiple-choice question to duel with.</summary>
+public sealed record ConfirmDuelRequest
 {
     public Guid QuestionId { get; init; }
 }

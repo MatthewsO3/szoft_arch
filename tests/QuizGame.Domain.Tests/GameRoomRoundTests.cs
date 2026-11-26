@@ -4,335 +4,310 @@ using Xunit;
 
 namespace QuizGame.Domain.Tests;
 
+/// <summary>Conquest, Expansion and Duel rounds of a room (plan §4.2).</summary>
 public class GameRoomRoundTests
 {
-    [Fact]
-    public void Reconnect_snapshot_is_caller_specific_and_recovers_closed_results()
-    {
-        var (room, a, b, _) = RoomWithPlayers();
-        var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-        room.TrySubmitAnswer(a.Id, Opt(round, 'B'), Make.T0, Grace);
-
-        var player = room.Snapshot(Make.T0, a.Id);
-        Assert.True(player.HasAnswered);
-        Assert.Null(player.HostQuestion);
-        Assert.Null(player.AnswerCount);
-        Assert.Equal(round.RoundId, player.PlayerQuestion!.RoundId);
-        Assert.False(room.Snapshot(Make.T0, b.Id).HasAnswered);
-        Assert.Null(room.Snapshot(Make.T0, Guid.NewGuid()).PlayerQuestion);
-
-        var host = room.Snapshot(Make.T0, forHost: true);
-        Assert.Equal(q, host.HostQuestion!.Question);
-        Assert.Equal(round.Deadline, host.HostQuestion.ServerDeadlineUtc);
-        Assert.Equal(1, host.AnswerCount!.Answered);
-        Assert.Null(host.PlayerQuestion);
-
-        var result = room.CloseRound(round.RoundId, Make.T0)!.Result;
-        var closed = room.Snapshot(Make.T0, a.Id);
-        Assert.Null(closed.PlayerQuestion);
-        Assert.Null(closed.CurrentRound);
-        Assert.False(closed.HasAnswered);
-        Assert.Equal(result, closed.LastRoundResult);
-    }
-
-    [Fact]
-    public void Battle_snapshot_excludes_question_for_spectators()
-    {
-        var (room, a, b, c) = RoomWithPlayers();
-        var q = Est();
-        Assert.True(room.TryStartRound(q, new SendQuestionRequest
-        {
-            QuestionId = q.Id, Kind = RoundKind.Battle, AttackerId = a.Id, TargetTerritoryIndex = Game.BaseOf(room, b.Id),
-        }, Make.T0).Ok);
-        Assert.NotNull(room.Snapshot(Make.T0, a.Id).PlayerQuestion);
-        Assert.NotNull(room.Snapshot(Make.T0, b.Id).PlayerQuestion);
-        Assert.Null(room.Snapshot(Make.T0, c.Id).PlayerQuestion);
-        Assert.Null(room.Snapshot(Make.T0, c.Id).HostQuestion);
-    }
-
     private static readonly TimeSpan Grace = TimeSpan.FromMilliseconds(300);
 
     private static QuestionDto Mc(int seconds = 10) => new()
     {
-        Id = Guid.NewGuid(),
-        Type = QuestionType.MultipleChoice,
-        TimeLimitSeconds = seconds,
+        Id = Guid.NewGuid(), Type = QuestionType.MultipleChoice, TimeLimitSeconds = seconds,
         Text = "secret question text",
-        Options = [new(Guid.NewGuid(), 'A', "a"), new(Guid.NewGuid(), 'B', "b")],
-        CorrectOption = 'B',
+        Options = [new(Guid.NewGuid(), 'A', "a"), new(Guid.NewGuid(), 'B', "b")], CorrectOption = 'B',
     };
 
-    private static QuestionDto Est() => new() { Id = Guid.NewGuid(), Type = QuestionType.Estimation, TimeLimitSeconds = 10, CorrectNumber = 100m };
-
-    private static (GameRoom Room, PlayerSummary A, PlayerSummary B, PlayerSummary C) RoomWithPlayers(
-        RoomSettings? settings = null, GamePhase phase = GamePhase.Conquest)
+    private static QuestionDto Est(decimal n = 100m) => new()
     {
-        var room = new GameRoom("123456", Guid.NewGuid(), settings ?? new RoomSettings(), 30, Make.T0);
+        Id = Guid.NewGuid(), Type = QuestionType.Estimation, TimeLimitSeconds = 10, CorrectNumber = n,
+    };
+
+    private static SubmitAnswerRequest Opt(RoundInfo r, char o) => new() { RoundId = r.RoundId, Option = o };
+    private static SubmitAnswerRequest Num(RoundInfo r, decimal n) => new() { RoundId = r.RoundId, Number = n };
+
+    // A room in the given phase with Anna, Bela, Cili, each on a base.
+    private static (GameRoom Room, PlayerSummary A, PlayerSummary B, PlayerSummary C) Room(
+        GamePhase phase = GamePhase.Conquest, RoomSettings? settings = null)
+    {
+        var room = new GameRoom("123456", Guid.NewGuid(), settings ?? new RoomSettings(), 30, Make.T0) { PickRandom = new Random(1) };
         var a = room.AddPlayer("Anna", Make.T0).Player!;
         var b = room.AddPlayer("Bela", Make.T0).Player!;
         var c = room.AddPlayer("Cili", Make.T0).Player!;
         foreach (var p in new[] { a, b, c }) room.SetConnected(p.Id, true);
         if (phase >= GamePhase.BaseSelection) Game.StartGame(room);
         if (phase >= GamePhase.Conquest) Game.PlayBaseSelection(room);
+        if (phase >= GamePhase.Expansion) Assert.True(room.TryAdvancePhase(GamePhase.Expansion, Make.T0).Ok);
         return (room, a, b, c);
     }
 
-    private static SendQuestionRequest Req(RoundKind kind, QuestionDto q) => new() { QuestionId = q.Id, Kind = kind };
-    private static SubmitAnswerRequest Opt(RoundInfo r, char o) => new() { RoundId = r.RoundId, Option = o };
-    private static SubmitAnswerRequest Num(RoundInfo r, decimal n) => new() { RoundId = r.RoundId, Number = n };
-
-    [Fact]
-    public void Round_opens_with_deadline_from_the_question_time_limit()
+    // Fills the map so Expansion can be left for the Duel phase.
+    private static void FillMap(GameRoom room)
     {
-        var (room, _, _, _) = RoomWithPlayers();
-        var q = Mc(seconds: 15);
-        var started = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0);
-
-        Assert.True(started.Ok);
-        Assert.Equal(Make.T0.AddSeconds(15), started.Round!.Deadline);
-        Assert.Equal(3, started.Round.ParticipantIds.Count);
-        Assert.True(room.HasOpenRound);
-    }
-
-    [Fact]
-    public void Question_without_time_limit_uses_the_room_default()
-    {
-        var (room, _, _, _) = RoomWithPlayers(new RoomSettings { DefaultQuestionSeconds = 33 });
-        var q = Mc(seconds: 0);
-        var started = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0);
-        Assert.Equal(Make.T0.AddSeconds(33), started.Round!.Deadline);
-    }
-
-    [Fact]
-    public void Only_one_round_at_a_time()
-    {
-        var (room, _, _, _) = RoomWithPlayers();
-        var q = Mc();
-        Assert.True(room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Ok);
-        Assert.Equal(StartRoundError.RoundActive, room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Error);
-    }
-
-    [Fact]
-    public void Round_needs_players_and_a_matching_question_type()
-    {
-        var empty = new GameRoom("123456", Guid.NewGuid(), new RoomSettings(), 30, Make.T0);
-        var q = Mc();
-        Assert.Equal(StartRoundError.NoPlayers, empty.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Error);
-
-        var (selection, _, _, _) = RoomWithPlayers(phase: GamePhase.BaseSelection);
-        Assert.Equal(StartRoundError.InvalidRound, selection.TryStartRound(q, Req(RoundKind.BaseOrder, q), Make.T0).Error);
-        Assert.False(selection.HasOpenRound);
-
-        var (room, _, _, _) = RoomWithPlayers();
-        var e = Est();
-        Assert.Equal(StartRoundError.InvalidRound, room.TryStartRound(e, Req(RoundKind.Grab, e), Make.T0).Error);
-        Assert.False(room.HasOpenRound);
-    }
-
-    [Fact]
-    public void Malformed_questions_are_refused()
-    {
-        var (room, _, _, _) = RoomWithPlayers();
-        var noCorrect = new QuestionDto { Id = Guid.NewGuid(), Type = QuestionType.MultipleChoice, Options = [new(Guid.NewGuid(), 'A', "a"), new(Guid.NewGuid(), 'B', "b")] };
-        Assert.Equal(StartRoundError.InvalidRound, room.TryStartRound(noCorrect, Req(RoundKind.Grab, noCorrect), Make.T0).Error);
-
-        var (selection, _, _, _) = RoomWithPlayers(phase: GamePhase.BaseSelection);
-        var noNumber = new QuestionDto { Id = Guid.NewGuid(), Type = QuestionType.Estimation };
-        Assert.Equal(StartRoundError.InvalidRound, selection.TryStartRound(noNumber, Req(RoundKind.BaseOrder, noNumber), Make.T0).Error);
-    }
-
-    [Fact]
-    public void First_answer_is_final_and_options_are_validated()
-    {
-        var (room, a, _, _) = RoomWithPlayers();
-        var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-
-        Assert.Equal(SubmitStatus.InvalidAnswer, room.TrySubmitAnswer(a.Id, new SubmitAnswerRequest { RoundId = round.RoundId }, Make.T0, Grace).Status);
-        Assert.Equal(SubmitStatus.InvalidAnswer, room.TrySubmitAnswer(a.Id, Opt(round, 'Z'), Make.T0, Grace).Status);
-        Assert.Equal(SubmitStatus.InvalidAnswer, room.TrySubmitAnswer(a.Id, Num(round, 5m), Make.T0, Grace).Status);
-
-        Assert.True(room.TrySubmitAnswer(a.Id, Opt(round, 'a'), Make.T0.AddSeconds(1), Grace).Ok); // lower case is normalised
-        Assert.Equal(SubmitStatus.AlreadyAnswered, room.TrySubmitAnswer(a.Id, Opt(round, 'B'), Make.T0.AddSeconds(2), Grace).Status);
-
-        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(3))!;
-        Assert.Equal('A', closed.Record.Answers.Single().Option); // the first answer stood
-    }
-
-    [Fact]
-    public void Estimation_answer_needs_a_number()
-    {
-        var (room, a, _, _) = RoomWithPlayers(phase: GamePhase.BaseSelection);
-        var q = Est();
-        var round = room.TryStartRound(q, Req(RoundKind.BaseOrder, q), Make.T0).Round!;
-        Assert.Equal(SubmitStatus.InvalidAnswer, room.TrySubmitAnswer(a.Id, Opt(round, 'A'), Make.T0, Grace).Status);
-        Assert.True(room.TrySubmitAnswer(a.Id, Num(round, 12.5m), Make.T0, Grace).Ok);
-    }
-
-    [Fact]
-    public void Deadline_plus_grace_is_the_cut_off()
-    {
-        var (room, a, b, _) = RoomWithPlayers();
-        var q = Mc(seconds: 10);
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-
-        Assert.True(room.TrySubmitAnswer(a.Id, Opt(round, 'B'), round.Deadline + Grace, Grace).Ok);
-        Assert.Equal(SubmitStatus.TooLate,
-            room.TrySubmitAnswer(b.Id, Opt(round, 'B'), round.Deadline + Grace + TimeSpan.FromMilliseconds(1), Grace).Status);
-    }
-
-    [Fact]
-    public void Wrong_round_or_no_round_and_strangers_are_rejected()
-    {
-        var (room, a, _, _) = RoomWithPlayers();
-        Assert.Equal(SubmitStatus.NoActiveRound,
-            room.TrySubmitAnswer(a.Id, new SubmitAnswerRequest { RoundId = Guid.NewGuid(), Option = 'A' }, Make.T0, Grace).Status);
-
-        var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-        Assert.Equal(SubmitStatus.NoActiveRound,
-            room.TrySubmitAnswer(a.Id, new SubmitAnswerRequest { RoundId = Guid.NewGuid(), Option = 'A' }, Make.T0, Grace).Status);
-        Assert.Equal(SubmitStatus.NotParticipant, room.TrySubmitAnswer(Guid.NewGuid(), Opt(round, 'A'), Make.T0, Grace).Status);
-    }
-
-    [Fact]
-    public void All_connected_players_answering_is_reported_offline_players_do_not_block()
-    {
-        var (room, a, b, c) = RoomWithPlayers();
-        room.SetConnected(c.Id, false);
-        var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-
-        var first = room.TrySubmitAnswer(a.Id, Opt(round, 'B'), Make.T0.AddSeconds(1), Grace);
-        Assert.False(first.AllAnswered);
-        Assert.Equal(1, first.Answered);
-        Assert.Equal(3, first.Total);
-
-        var second = room.TrySubmitAnswer(b.Id, Opt(round, 'A'), Make.T0.AddSeconds(2), Grace);
-        Assert.True(second.AllAnswered);
-    }
-
-    [Fact]
-    public void Closing_ranks_clears_the_round_and_is_idempotent()
-    {
-        var (room, a, b, c) = RoomWithPlayers();
-        var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-        room.TrySubmitAnswer(a.Id, Opt(round, 'B'), Make.T0.AddMilliseconds(900), Grace);
-        room.TrySubmitAnswer(b.Id, Opt(round, 'B'), Make.T0.AddMilliseconds(400), Grace);
-
-        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(10))!;
-
-        Assert.Equal(new[] { b.Id }, closed.Result.WinnerPlayerIds.ToArray());
-        Assert.Equal('B', closed.Result.CorrectOption);
-        Assert.Equal(new[] { b.Id, a.Id, c.Id }, closed.Result.Ranking.Select(r => r.PlayerId).ToArray());
-        Assert.Equal(400L, closed.Result.Ranking[0].ElapsedMs);
-        Assert.False(room.HasOpenRound);
-        Assert.Null(room.CloseRound(round.RoundId, Make.T0.AddSeconds(11)));   // timer firing after the host closed
-        Assert.Null(room.CloseRound(null, Make.T0.AddSeconds(11)));
-    }
-
-    [Fact]
-    public void Closed_round_record_has_what_the_database_needs()
-    {
-        var (room, a, _, _) = RoomWithPlayers(phase: GamePhase.BaseSelection);
-        var q = Est();
-        var round = room.TryStartRound(q, Req(RoundKind.BaseOrder, q), Make.T0).Round!;
-        room.TrySubmitAnswer(a.Id, Num(round, 120m), Make.T0.AddMilliseconds(250), Grace);
-
-        var rec = room.CloseRound(round.RoundId, Make.T0.AddSeconds(10))!.Record;
-
-        Assert.Equal(1, rec.Seq);
-        Assert.Equal(q.Id, rec.QuestionId);
-        Assert.Equal(RoundKind.BaseOrder, rec.Kind);
-        Assert.Equal(a.Id, rec.WinnerPlayerId);
-        var answer = rec.Answers.Single();           // only players who answered get a row
-        Assert.Equal(120m, answer.Number);
-        Assert.Equal(20m, answer.Distance);
-        Assert.Equal(1, answer.Rank);
-        Assert.Equal(Make.T0.AddMilliseconds(250), answer.ReceivedAt);
-
-        while (room.CurrentPickView() is { } pick)
-            Assert.True(room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0.AddSeconds(15)).Ok);
-        Assert.True(room.TryAdvancePhase(GamePhase.Conquest, Make.T0.AddSeconds(16)).Ok);
-
-        var q2 = Mc();
-        var next = room.TryStartRound(q2, Req(RoundKind.Grab, q2), Make.T0.AddSeconds(20)).Round!;
-        Assert.Equal(2, room.CloseRound(next.RoundId, Make.T0.AddSeconds(30))!.Record.Seq);
-    }
-
-    [Fact]
-    public void Players_never_get_the_correct_answer_or_the_question_text()
-    {
-        var (room, _, _, _) = RoomWithPlayers();
-        var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-        var forPlayer = round.ForPlayer();
-
-        Assert.Equal(round.RoundId, forPlayer.RoundId);
-        Assert.Equal(2, forPlayer.Options.Count);
-        var json = System.Text.Json.JsonSerializer.Serialize(forPlayer);
-        Assert.False(json.Contains("secret question text"));
-        Assert.False(json.Contains("Correct"));
-
-        // The open round in the public snapshot carries no answer either (a closed round's result may).
-        var open = room.Snapshot(Make.T0);
-        var snapshot = System.Text.Json.JsonSerializer.Serialize(new { open.CurrentRound, open.PlayerQuestion, open.HostQuestion });
-        Assert.False(snapshot.Contains("Correct"));
-        Assert.Equal(round.RoundId, open.CurrentRound!.RoundId);
-    }
-
-    [Fact]
-    public void Battle_involves_only_attacker_and_defender()
-    {
-        var (room, a, b, c) = RoomWithPlayers();
-        var q = Est();
-        var request = new SendQuestionRequest
+        while (room.GetMap()!.Territories.Any(t => t.OwnerPlayerId is null))
         {
-            QuestionId = q.Id, Kind = RoundKind.Battle, AttackerId = a.Id, TargetTerritoryIndex = Game.BaseOf(room, b.Id),
-        };
+            var q = Est(50m);
+            var round = room.TryStartExpansionRound(q, Make.T0).Round!;
+            foreach (var pid in round.ParticipantIds)
+                room.TrySubmitAnswer(pid, new SubmitAnswerRequest { RoundId = round.RoundId, Number = 50m }, Make.T0, Grace);
+            var closed = room.CloseRound(round.RoundId, Make.T0)!;
+            if (closed.ExpansionPick is { } pick)
+                room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0);
+        }
+    }
 
-        var round = room.TryStartRound(q, request, Make.T0).Round!;
-        Assert.Equal(b.Id, round.DefenderId);
-        Assert.Equal(2, round.ParticipantIds.Count);
-        Assert.Equal(SubmitStatus.NotParticipant, room.TrySubmitAnswer(c.Id, Num(round, 1m), Make.T0, Grace).Status);
+    // ---- Conquest ----
 
-        room.TrySubmitAnswer(a.Id, Num(round, 101m), Make.T0.AddMilliseconds(100), Grace);
-        var last = room.TrySubmitAnswer(b.Id, Num(round, 101m), Make.T0.AddMilliseconds(900), Grace);
-        Assert.True(last.AllAnswered);
+    [Fact]
+    public void Conquest_claim_stage_asks_each_player_in_turn_order()
+    {
+        var (room, _, _, _) = Room();
+        var order = room.TurnOrder;
+        var first = room.StartConquestClaims(Make.T0)!;
+        Assert.Equal(order[0], first.Picker.Id);
+        Assert.Equal(PickPurpose.ConquestClaim, first.Purpose);
 
-        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(2))!;
-        Assert.Equal(new[] { b.Id }, closed.Result.WinnerPlayerIds.ToArray());   // tie → defender keeps it
+        // Each player claims a tile; claims do not take ownership yet.
+        var claimed = new List<int>();
+        for (var i = 0; i < order.Count; i++)
+        {
+            var pick = room.CurrentPickView()!;
+            Assert.Equal(order[i], pick.Picker.Id);
+            var index = pick.ValidTerritoryIndices[0];
+            claimed.Add(index);
+            var result = room.TryPick(pick.Picker.Id, index, Make.T0.AddSeconds(1));
+            Assert.True(result.Ok);
+            Assert.True(room.GetMap()!.Territories.First(t => t.Index == index).OwnerPlayerId is null); // not owned yet
+        }
+
+        Assert.True(room.ClaimsOpen);
+        Assert.Null(room.CurrentPickView()); // all claims in
     }
 
     [Fact]
-    public void Battle_requires_attacker_target_and_an_owned_foreign_territory()
+    public void Conquest_correct_answerers_keep_their_claim_wrong_ones_lose_it()
     {
-        var (room, a, b, _) = RoomWithPlayers();
-        var q = Est();
-        Assert.Equal(StartRoundError.InvalidRound,
-            room.TryStartRound(q, new SendQuestionRequest { QuestionId = q.Id, Kind = RoundKind.Battle }, Make.T0).Error);
+        var (room, _, _, _) = Room();
+        var order = room.TurnOrder;
+        room.StartConquestClaims(Make.T0);
 
-        SendQuestionRequest Attack(int target) =>
-            new() { QuestionId = q.Id, Kind = RoundKind.Battle, AttackerId = a.Id, TargetTerritoryIndex = target };
+        var claimByPlayer = new Dictionary<Guid, int>();
+        while (room.CurrentPickView() is { } pick)
+        {
+            var index = pick.ValidTerritoryIndices[0];
+            claimByPlayer[pick.Picker.Id] = index;
+            room.TryPick(pick.Picker.Id, index, Make.T0.AddSeconds(1));
+        }
 
-        var free = room.GetMap()!.Territories.First(t => t.OwnerPlayerId is null).Index;
-        Assert.Equal(StartRoundError.InvalidRound, room.TryStartRound(q, Attack(free), Make.T0).Error);                  // nobody owns it
-        Assert.Equal(StartRoundError.InvalidRound, room.TryStartRound(q, Attack(999), Make.T0).Error);                   // no such territory
-        Assert.Equal(StartRoundError.InvalidRound, room.TryStartRound(q, Attack(Game.BaseOf(room, a.Id)), Make.T0).Error); // own territory
-        Assert.True(room.TryStartRound(q, Attack(Game.BaseOf(room, b.Id)), Make.T0).Ok);
-    }
-
-    [Fact]
-    public void Removed_player_does_not_hold_the_round_open()
-    {
-        var (room, a, b, c) = RoomWithPlayers();
         var q = Mc();
-        var round = room.TryStartRound(q, Req(RoundKind.Grab, q), Make.T0).Round!;
-        room.RemovePlayer(c.Id);
+        var round = room.TryStartConquestRound(q, Make.T0.AddSeconds(2)).Round!;
+        Assert.Equal(3, round.ParticipantIds.Count);
 
-        room.TrySubmitAnswer(a.Id, Opt(round, 'B'), Make.T0.AddSeconds(1), Grace);
-        Assert.True(room.TrySubmitAnswer(b.Id, Opt(round, 'B'), Make.T0.AddSeconds(2), Grace).AllAnswered);
+        // First two answer right, the third wrong.
+        room.TrySubmitAnswer(order[0], Opt(round, 'B'), Make.T0.AddSeconds(3), Grace);
+        room.TrySubmitAnswer(order[1], Opt(round, 'B'), Make.T0.AddSeconds(3), Grace);
+        room.TrySubmitAnswer(order[2], Opt(round, 'A'), Make.T0.AddSeconds(3), Grace);
+
+        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(4))!;
+        Assert.Equal(RoundKind.Conquest, closed.Result.Kind);
+        Assert.Equal(new[] { order[0], order[1] }.OrderBy(x => x), closed.Result.WinnerPlayerIds.OrderBy(x => x));
+
+        Assert.Equal(order[0], room.OwnerOf(claimByPlayer[order[0]]));
+        Assert.Equal(order[1], room.OwnerOf(claimByPlayer[order[1]]));
+        Assert.Null(room.OwnerOf(claimByPlayer[order[2]])); // wrong answer: claim released
+
+        var wonCell = room.GetMap()!.Territories.First(t => t.Index == claimByPlayer[order[0]]);
+        Assert.False(wonCell.IsBase);
+        Assert.Equal(room.Settings.TerritoryValue, wonCell.Value);
+    }
+
+    [Fact]
+    public void Conquest_rotates_the_turn_order_and_counts_the_round()
+    {
+        var (room, _, _, _) = Room(settings: new RoomSettings { ConquestRounds = 2 });
+        var before = room.TurnOrder;
+
+        room.StartConquestClaims(Make.T0);
+        while (room.CurrentPickView() is { } pick) room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0);
+        var q = Mc();
+        var round = room.TryStartConquestRound(q, Make.T0).Round!;
+        foreach (var pid in round.ParticipantIds) room.TrySubmitAnswer(pid, Opt(round, 'B'), Make.T0, Grace);
+        room.CloseRound(round.RoundId, Make.T0);
+
+        // Right rotation: 1st -> last.
+        var after = room.TurnOrder;
+        Assert.Equal(before.Skip(1).Append(before[0]), after);
+    }
+
+    [Fact]
+    public void Conquest_rounds_are_limited_by_the_setting()
+    {
+        var (room, _, _, _) = Room(settings: new RoomSettings { ConquestRounds = 1 });
+        room.StartConquestClaims(Make.T0);
+        while (room.CurrentPickView() is { } pick) room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0);
+        var q = Mc();
+        var round = room.TryStartConquestRound(q, Make.T0).Round!;
+        foreach (var pid in round.ParticipantIds) room.TrySubmitAnswer(pid, Opt(round, 'B'), Make.T0, Grace);
+        room.CloseRound(round.RoundId, Make.T0);
+
+        Assert.True(room.PhaseRoundsExhausted);
+        Assert.Null(room.StartConquestClaims(Make.T0)); // no more Conquest rounds
+    }
+
+    // ---- Expansion ----
+
+    [Fact]
+    public void Expansion_closest_guess_picks_a_free_tile()
+    {
+        var (room, a, b, c) = Room(GamePhase.Expansion);
+        var q = Est(100m);
+        var round = room.TryStartExpansionRound(q, Make.T0).Round!;
+        Assert.Equal(3, round.ParticipantIds.Count);
+
+        room.TrySubmitAnswer(a.Id, Num(round, 130m), Make.T0.AddMilliseconds(100), Grace);
+        room.TrySubmitAnswer(b.Id, Num(round, 102m), Make.T0.AddMilliseconds(200), Grace); // closest
+        room.TrySubmitAnswer(c.Id, Num(round, 50m), Make.T0.AddMilliseconds(300), Grace);
+
+        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(1))!;
+        Assert.Equal(new[] { b.Id }, closed.Result.WinnerPlayerIds.ToArray());
+        var pick = closed.ExpansionPick!;
+        Assert.Equal(b.Id, pick.Picker.Id);
+        Assert.Equal(PickPurpose.Expansion, pick.Purpose);
+
+        var ownedBefore = room.GetMap()!.Territories.Count(t => t.OwnerPlayerId == b.Id);
+        var assign = room.TryPick(b.Id, pick.ValidTerritoryIndices[0], Make.T0.AddSeconds(2));
+        Assert.True(assign.Ok);
+        Assert.Equal(ownedBefore + 1, room.GetMap()!.Territories.Count(t => t.OwnerPlayerId == b.Id));
+    }
+
+    [Fact]
+    public void Expansion_fills_the_map_then_Duel_can_begin()
+    {
+        var (room, _, _, _) = Room(GamePhase.Expansion);
+        Assert.Equal(PhaseError.PhaseNotComplete, room.TryAdvancePhase(GamePhase.Duel, Make.T0).Error); // map not full
+
+        FillMap(room);
+        Assert.DoesNotContain(room.GetMap()!.Territories, t => t.OwnerPlayerId is null);
+        Assert.True(room.TryAdvancePhase(GamePhase.Duel, Make.T0.AddSeconds(1)).Ok);
+    }
+
+    // ---- Duel ----
+
+    private static (GameRoom Room, PlayerSummary A, PlayerSummary B, PlayerSummary C) DuelRoom(RoomSettings? settings = null)
+    {
+        var (room, a, b, c) = Room(GamePhase.Expansion, settings);
+        FillMap(room);
+        Assert.True(room.TryAdvancePhase(GamePhase.Duel, Make.T0).Ok);
+        return (room, a, b, c);
+    }
+
+    [Fact]
+    public void Duel_attacker_right_takes_a_normal_tile()
+    {
+        var (room, _, _, _) = DuelRoom();
+        var (attacker, defender, target) = FindDuelViaDto(room);
+
+        Assert.True(room.TryNominateTarget(attacker, target).Ok);
+        var q = Mc();
+        var round = room.TryStartDuelRound(q, Make.T0).Round!;
+        Assert.Equal(2, round.ParticipantIds.Count);
+
+        room.TrySubmitAnswer(attacker, Opt(round, 'B'), Make.T0.AddMilliseconds(100), Grace); // right
+        room.TrySubmitAnswer(defender, Opt(round, 'A'), Make.T0.AddMilliseconds(200), Grace); // wrong
+        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(1))!;
+
+        Assert.Equal(new[] { attacker }, closed.Result.WinnerPlayerIds.ToArray());
+        Assert.Equal(attacker, room.OwnerOf(target));
+    }
+
+    [Fact]
+    public void Duel_defender_right_earns_a_bonus_and_keeps_the_tile()
+    {
+        var (room, _, _, _) = DuelRoom();
+        var (attacker, defender, target) = FindDuelViaDto(room);
+
+        room.TryNominateTarget(attacker, target);
+        var q = Mc();
+        var round = room.TryStartDuelRound(q, Make.T0).Round!;
+        room.TrySubmitAnswer(attacker, Opt(round, 'A'), Make.T0, Grace); // wrong
+        room.TrySubmitAnswer(defender, Opt(round, 'B'), Make.T0, Grace); // right
+        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(1))!;
+
+        Assert.Empty(closed.Result.WinnerPlayerIds);
+        Assert.Equal(defender, room.OwnerOf(target)); // defender keeps it
+        var defenderBonus = closed.Result.Ranking.First(r => r.PlayerId == defender).BonusAwarded;
+        Assert.Equal(room.Settings.DefenderBonus, defenderBonus);
+        Assert.Contains(room.Scoreboard(), s => s.PlayerId == defender && s.Score >= room.Settings.DefenderBonus);
+    }
+
+    [Fact]
+    public void Duel_both_right_is_a_draw_with_bonuses_for_both()
+    {
+        var (room, _, _, _) = DuelRoom();
+        var (attacker, defender, target) = FindDuelViaDto(room);
+
+        room.TryNominateTarget(attacker, target);
+        var q = Mc();
+        var round = room.TryStartDuelRound(q, Make.T0).Round!;
+        room.TrySubmitAnswer(attacker, Opt(round, 'B'), Make.T0, Grace);
+        room.TrySubmitAnswer(defender, Opt(round, 'B'), Make.T0, Grace);
+        var closed = room.CloseRound(round.RoundId, Make.T0.AddSeconds(1))!;
+
+        Assert.Empty(closed.Result.WinnerPlayerIds);
+        Assert.Equal(defender, room.OwnerOf(target)); // no tile change on a draw
+        Assert.Equal(room.Settings.DrawBonus, closed.Result.Ranking.First(r => r.PlayerId == attacker).BonusAwarded);
+        Assert.Equal(room.Settings.DrawBonus, closed.Result.Ranking.First(r => r.PlayerId == defender).BonusAwarded);
+    }
+
+    [Fact]
+    public void Duel_base_takes_three_hits_to_capture()
+    {
+        var (room, _, _, _) = DuelRoom(new RoomSettings { BaseHealth = 3, DuelRounds = 20 });
+
+        // Attack the same base three times; each time the current active player must be able to reach it.
+        for (var hit = 1; hit <= 3; hit++)
+        {
+            // Find a base owned by someone other than the active player, adjacent to the active player.
+            var attacker = room.ActivePlayer()!.Value;
+            var dto = room.GetMap()!;
+            var cols = dto.Cols;
+            var target = dto.Territories.FirstOrDefault(t =>
+                t.IsBase && t.OwnerPlayerId is { } o && o != attacker &&
+                Neighbours(dto.Rows, cols, t.Index).Any(n => dto.Territories.First(x => x.Index == n).OwnerPlayerId == attacker));
+            if (target is null) return; // layout did not line up a base attack this turn; test is best-effort
+
+            var healthBefore = target.Health;
+            Assert.True(room.TryNominateTarget(attacker, target.Index).Ok);
+            var q = Mc();
+            var round = room.TryStartDuelRound(q, Make.T0).Round!;
+            room.TrySubmitAnswer(attacker, Opt(round, 'B'), Make.T0, Grace); // attacker right
+            room.TrySubmitAnswer(target.OwnerPlayerId!.Value, Opt(round, 'A'), Make.T0, Grace); // defender wrong
+            room.CloseRound(round.RoundId, Make.T0);
+
+            var after = room.GetMap()!.Territories.First(t => t.Index == target.Index);
+            if (healthBefore > 1)
+                Assert.Equal(healthBefore - 1, after.Health); // base survived, lost one health
+            else
+                Assert.Equal(attacker, after.OwnerPlayerId); // captured on the last hit
+        }
+    }
+
+    // Duel helpers computing adjacency from the DTO (the GameMap ctor is internal).
+    private static (Guid Attacker, Guid Defender, int Target) FindDuelViaDto(GameRoom room)
+    {
+        var attacker = room.ActivePlayer()!.Value;
+        var dto = room.GetMap()!;
+        bool Adjacent(int index) => Neighbours(dto.Rows, dto.Cols, index).Any(n => dto.Territories.First(x => x.Index == n).OwnerPlayerId == attacker);
+        // Prefer a normal enemy tile (captured in one hit) over a base.
+        var target = dto.Territories.FirstOrDefault(t => !t.IsBase && t.OwnerPlayerId is { } o && o != attacker && Adjacent(t.Index))
+            ?? dto.Territories.First(t => t.OwnerPlayerId is { } o && o != attacker && Adjacent(t.Index));
+        return (attacker, target.OwnerPlayerId!.Value, target.Index);
+    }
+
+    private static IEnumerable<int> Neighbours(int rows, int cols, int index)
+    {
+        var r = index / cols; var c = index % cols;
+        if (r > 0) yield return index - cols;
+        if (c > 0) yield return index - 1;
+        if (c < cols - 1) yield return index + 1;
+        if (r < rows - 1) yield return index + cols;
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using QuizGame.Contracts;
@@ -15,10 +16,11 @@ public sealed class RoundOptions
 }
 
 /// <summary>
-/// Runs question rounds end to end (plan §7.1 RoundTimerService + the round part of the hub):
-/// opens a round, pushes the right view to each audience, schedules the deadline, closes the round on
-/// deadline / all answered / host request, broadcasts <c>RoundClosed</c> and records it.
-/// The room's own lock makes the three closers race-safe: only the first one gets a result.
+/// Runs question rounds end to end (plan §7.1 + the round part of the hub). Per phase:
+/// Conquest runs a claim stage (via <see cref="PhaseCoordinator"/>) then one multiple-choice question for the
+/// claimers; Expansion runs one estimation question and hands a tile to the closest guess; Duel runs a
+/// nominate → confirm → multiple-choice duel between attacker and defender.
+/// The room's own lock makes the three closers (deadline, all-answered, host) race-safe.
 /// </summary>
 public sealed class RoundCoordinator(
     IQuestionProvider questions,
@@ -34,16 +36,101 @@ public sealed class RoundCoordinator(
     private readonly object _gate = new();
     private readonly Dictionary<string, (Guid RoundId, CancellationTokenSource Cts)> _timers = [];
 
-    // Serialize state changes AND their delivery so reconnect snapshots cannot overtake round events.
-    private Task<T> SerializedAsync<T>(GameRoom room, Func<Task<T>> action) => commands.RunAsync(room, action);
+    // While a Conquest claim stage runs, the question the host chose, to open once all claims are in.
+    private readonly ConcurrentDictionary<string, Guid> _pendingConquestQuestion = new();
 
+    private Task<T> SerializedAsync<T>(GameRoom room, Func<Task<T>> action) => commands.RunAsync(room, action);
     private TimeSpan Grace => TimeSpan.FromMilliseconds(Math.Max(0, options.Value.GraceMilliseconds));
 
-    /// <summary>Host opens a round. Returns the error code to report, or null on success.</summary>
-    public Task<string?> StartAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct = default) =>
-        SerializedAsync(room, () => StartCoreAsync(room, request, ct));
+    /// <summary>Wires the claim-stage completion callback. Called once at startup.</summary>
+    public void Wire() => phases.OnClaimsReady = OpenConquestQuestionCoreAsync;
 
-    /// <summary>An attacker nominates a battle target; the host is told and later confirms it (plan §4.2, D3).</summary>
+    /// <summary>
+    /// Host sends a question. In Conquest this starts the claim stage and defers the question until claims are in;
+    /// in Expansion it opens an estimation round; in Duel it confirms the nomination and opens the duel.
+    /// </summary>
+    public Task<string?> SendQuestionAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct = default) =>
+        SerializedAsync(room, async () =>
+        {
+            var question = await questions.GetActiveAsync(request.QuestionId, ct);
+            if (question is null) return ErrorCodes.QuestionNotFound;
+
+            return room.Phase switch
+            {
+                GamePhase.Conquest => await StartConquestAsync(room, question),
+                GamePhase.Expansion => Report(room, room.TryStartExpansionRound(question, time.GetUtcNow())) is { } e ? e : await AfterStartAsync(room),
+                GamePhase.Duel => await StartDuelAsync(room, question),
+                _ => ErrorCodes.InvalidPhase,
+            };
+        });
+
+    private async Task<string?> StartConquestAsync(GameRoom room, QuestionDto question)
+    {
+        if (question.Type != QuestionType.MultipleChoice) return ErrorCodes.InvalidRound;
+        if (room.HasOpenRound || room.ClaimsOpen) return ErrorCodes.RoundInProgress;
+        if (room.PhaseRoundsExhausted) return ErrorCodes.PhaseNotComplete;
+
+        _pendingConquestQuestion[room.Code] = question.Id;
+        await phases.StartConquestClaimsCoreAsync(room); // asks the first claimer; OpenConquestQuestionCoreAsync fires when all are in
+        return null;
+    }
+
+    // Called by PhaseCoordinator.OnClaimsReady once every player has claimed a tile.
+    private async Task OpenConquestQuestionCoreAsync(GameRoom room)
+    {
+        if (!_pendingConquestQuestion.TryRemove(room.Code, out var questionId)) return;
+        var question = await questions.GetActiveAsync(questionId, CancellationToken.None);
+        if (question is null) return;
+
+        var started = room.TryStartConquestRound(question, time.GetUtcNow());
+        if (!started.Ok)
+        {
+            logger.LogWarning("Conquest question not opened in room {Room}: {Error}", room.Code, started.Error);
+            return;
+        }
+
+        ScheduleClose(room, started.Round!);
+        await PublishStartAsync(room, started.Round!);
+    }
+
+    private async Task<string?> StartDuelAsync(GameRoom room, QuestionDto question)
+    {
+        var started = room.TryStartDuelRound(question, time.GetUtcNow());
+        if (Report(room, started) is { } error) return error;
+        ScheduleClose(room, started.Round!);
+        await PublishStartAsync(room, started.Round!);
+        return null;
+    }
+
+    private async Task<string?> AfterStartAsync(GameRoom room)
+    {
+        if (room.GetOpenRound() is { } open)
+        {
+            ScheduleClose(room, open.Round);
+            await PublishStartAsync(room, open.Round);
+        }
+
+        return null;
+    }
+
+    private string? Report(GameRoom room, StartRoundResult started)
+    {
+        if (started.Ok) return null;
+        logger.LogInformation("Round not started in room {Room}: {Error} {Detail}", room.Code, started.Error, started.Detail);
+        return started.Error switch
+        {
+            StartRoundError.RoundActive => ErrorCodes.RoundInProgress,
+            StartRoundError.PickInProgress => ErrorCodes.RoundInProgress,
+            StartRoundError.NoPlayers => ErrorCodes.NotEnoughPlayers,
+            StartRoundError.InvalidPhase => ErrorCodes.InvalidPhase,
+            StartRoundError.RoundsExhausted => ErrorCodes.PhaseNotComplete,
+            StartRoundError.MapFull => ErrorCodes.PhaseNotComplete,
+            StartRoundError.NoTarget => ErrorCodes.NoNomination,
+            _ => ErrorCodes.InvalidRound,
+        };
+    }
+
+    /// <summary>An attacker nominates a duel target; the host is told and later confirms it (plan §4.2).</summary>
     public Task<string?> NominateTargetAsync(GameRoom room, Guid attackerId, int targetIndex) =>
         SerializedAsync(room, async () =>
         {
@@ -54,75 +141,50 @@ public sealed class RoundCoordinator(
                 {
                     NominateError.InvalidPhase => ErrorCodes.InvalidPhase,
                     NominateError.RoundInProgress => ErrorCodes.RoundInProgress,
+                    NominateError.NotYourTurn => ErrorCodes.NotYourTurn,
                     _ => ErrorCodes.InvalidTarget,
                 };
             }
 
             var n = result.Nomination!;
             await hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
-                HubNames.Events.BattleNominated, new BattleNominationDto(n.AttackerId, n.DefenderId, n.TargetTerritoryIndex));
+                HubNames.Events.DuelNominated, new DuelNominationDto(n.AttackerId, n.DefenderId, n.TargetTerritoryIndex));
             return null;
         });
 
-    /// <summary>Host confirms a pending nomination and opens the battle with the chosen estimation question (D3).</summary>
-    public Task<string?> ConfirmBattleAsync(GameRoom room, Guid questionId, CancellationToken ct = default) =>
+    /// <summary>Host confirms a pending nomination and opens the duel with the chosen multiple-choice question.</summary>
+    public Task<string?> ConfirmDuelAsync(GameRoom room, Guid questionId, CancellationToken ct = default) =>
         SerializedAsync(room, async () =>
         {
-            if (room.TakeNomination() is not { } nomination)
-                return ErrorCodes.NoNomination;
-
-            var request = new SendQuestionRequest
-            {
-                QuestionId = questionId,
-                Kind = RoundKind.Battle,
-                AttackerId = nomination.AttackerId,
-                TargetTerritoryIndex = nomination.TargetTerritoryIndex,
-            };
-            return await StartCoreAsync(room, request, ct);
+            if (room.CurrentNomination() is null) return ErrorCodes.NoNomination;
+            var question = await questions.GetActiveAsync(questionId, ct);
+            if (question is null) return ErrorCodes.QuestionNotFound;
+            return await StartDuelAsync(room, question);
         });
 
-    private async Task<string?> StartCoreAsync(GameRoom room, SendQuestionRequest request, CancellationToken ct)
+    private async Task PublishStartAsync(GameRoom room, RoundInfo round)
     {
-        var question = await questions.GetActiveAsync(request.QuestionId, ct);
-        if (question is null) return ErrorCodes.QuestionNotFound;
-
-        var started = room.TryStartRound(question, request, time.GetUtcNow());
-        if (!started.Ok)
-        {
-            logger.LogInformation("Round not started in room {Room}: {Error} {Detail}", room.Code, started.Error, started.Detail);
-            return started.Error switch
-            {
-                StartRoundError.RoundActive => ErrorCodes.RoundInProgress,
-                StartRoundError.PickInProgress => ErrorCodes.RoundInProgress,
-                StartRoundError.NoPlayers => ErrorCodes.NotEnoughPlayers,
-                StartRoundError.InvalidPhase => ErrorCodes.InvalidPhase,
-                _ => ErrorCodes.InvalidRound,
-            };
-        }
-
-        var round = started.Round!;
-        ScheduleClose(room, round);
-        await PublishStartAsync(room.Code, round);
-        return null;
-    }
-
-    private async Task PublishStartAsync(string code, RoundInfo round)
-    {
+        var code = room.Code;
         var forPlayer = round.ForPlayer();
 
-        // Host (and projector): full question including the correct answer.
         await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.QuestionStarted, round.ForHost());
         await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.AnswerCountChanged,
             new AnswerCount(0, round.ParticipantIds.Count));
 
-        if (round.Kind == RoundKind.Battle)
+        if (round.Kind == RoundKind.Duel)
         {
-            // Only the two duellists get the question; everybody else is told who fights (plan §6.3).
+            // Only the two duellists get the question; everybody else is told who fights (plan §4.2).
             var duellists = registry.GetPlayerConnections(code, round.ParticipantIds.ToHashSet());
             await hub.Clients.Clients(duellists).SendAsync(HubNames.Events.QuestionStarted, forPlayer);
             await hub.Clients.GroupExcept(GroupNames.Players(code), duellists).SendAsync(
-                HubNames.Events.BattleAnnounced,
-                new BattleAnnouncement(round.AttackerId!.Value, round.DefenderId!.Value, round.TargetTerritoryIndex!.Value));
+                HubNames.Events.DuelAnnounced,
+                new DuelAnnouncement(round.AttackerId!.Value, round.DefenderId!.Value, round.TargetTerritoryIndex!.Value));
+        }
+        else if (round.Kind == RoundKind.Conquest)
+        {
+            // Only the players who claimed a tile answer.
+            var claimers = registry.GetPlayerConnections(code, round.ParticipantIds.ToHashSet());
+            await hub.Clients.Clients(claimers).SendAsync(HubNames.Events.QuestionStarted, forPlayer);
         }
         else
         {
@@ -130,7 +192,6 @@ public sealed class RoundCoordinator(
         }
     }
 
-    /// <summary>Records a player's answer. Returns the error code to report, or null on success.</summary>
     public Task<string?> SubmitAsync(GameRoom room, Guid playerId, SubmitAnswerRequest request, DateTimeOffset receivedAt) =>
         SerializedAsync(room, () => SubmitCoreAsync(room, playerId, request, receivedAt));
 
@@ -149,7 +210,6 @@ public sealed class RoundCoordinator(
             };
         }
 
-        // Progress only, never the answer content (plan §6.3).
         await hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
             HubNames.Events.AnswerCountChanged, new AnswerCount(result.Answered, result.Total));
 
@@ -158,7 +218,6 @@ public sealed class RoundCoordinator(
         return null;
     }
 
-    /// <summary>Closes the round (host, deadline timer or all answered). False if it was already closed.</summary>
     public Task<bool> CloseAsync(GameRoom room, Guid? roundId = null) =>
         SerializedAsync(room, () => CloseCoreAsync(room, roundId));
 
@@ -170,18 +229,17 @@ public sealed class RoundCoordinator(
         CancelTimer(room.Code, closed.Record.RoundId);
         await hub.Clients.Group(GroupNames.Room(room.Code)).SendAsync(HubNames.Events.RoundClosed, closed.Result);
         await recorder.RoundClosedAsync(room.SessionId, closed.Record);
-        await phases.OnRoundClosedCoreAsync(room, closed); // base-order round: ask the first player for a base
+        await phases.OnRoundResolvedCoreAsync(room, closed); // map change / expansion pick follow-up
         return true;
     }
 
-    /// <summary>Stops the deadline timer of a room that is being closed or removed.</summary>
     public void Cancel(string roomCode)
     {
+        _pendingConquestQuestion.TryRemove(roomCode, out _);
         CancelTimer(roomCode, null);
         phases.Cancel(roomCode);
     }
 
-    /// <summary>One caller-specific snapshot restores open rounds, missed results and a pending base pick.</summary>
     public Task SendStateAsync(GameRoom room, IClientProxy caller, Guid? playerId) =>
         SerializedAsync(room, async () =>
         {
@@ -210,18 +268,11 @@ public sealed class RoundCoordinator(
                 await Task.Delay(delay, time, cts.Token);
                 await CloseAsync(room, round.RoundId);
             }
-            catch (OperationCanceledException)
-            {
-                // round closed early or room removed
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Closing round {Round} in room {Room} failed", round.RoundId, room.Code);
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { logger.LogError(ex, "Closing round {Round} in room {Room} failed", round.RoundId, room.Code); }
         });
     }
 
-    // Only the timer of the given round is cancelled, so a late close of round N can never kill round N+1's timer.
     private void CancelTimer(string roomCode, Guid? roundId)
     {
         CancellationTokenSource? cts = null;

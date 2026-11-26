@@ -10,11 +10,13 @@ public enum PhaseError
     InvalidTransition,
     NotEnoughPlayers,
     RoundInProgress,
+    PickInProgress,
     BaseSelectionIncomplete,
+    PhaseNotComplete,
     InvalidSettings,
 }
 
-public readonly record struct StartGameResult(PhaseError Error, MapDto? Map = null)
+public readonly record struct StartGameResult(PhaseError Error, MapDto? Map = null, IReadOnlyList<Guid>? TurnOrder = null)
 {
     public bool Ok => Error == PhaseError.None;
 }
@@ -33,43 +35,45 @@ public enum PickError
     InvalidPick,
 }
 
-/// <summary>A base pick that is waiting for a player. <see cref="Seq"/> identifies it so that a stale timeout is ignored.</summary>
+/// <summary>A pending territory choice waiting for a player. <see cref="Seq"/> identifies it so a stale timeout is ignored.</summary>
 public sealed record PickView(
-    long Seq, PlayerSummary Picker, DateTimeOffset Deadline, IReadOnlyList<int> ValidTerritoryIndices, bool Relaxed);
+    long Seq, PickPurpose Purpose, PlayerSummary Picker, DateTimeOffset Deadline, IReadOnlyList<int> ValidTerritoryIndices);
 
-/// <summary>What the map looks like after a base was assigned or released, and what happens next.</summary>
+/// <summary>What the map looks like after cells changed, and what pick happens next.</summary>
 public sealed record MapChange(
     IReadOnlyList<TerritoryDto> Changed,
     IReadOnlyList<ScoreEntry> Scoreboard,
     PickView? NextPick,
     bool PickingFinished);
 
-public readonly record struct PickResult(PickError Error, MapChange? Change = null)
+public readonly record struct PickResult(PickError Error, MapChange? Change = null, bool AllClaimsIn = false)
 {
     public bool Ok => Error == PickError.None;
 }
 
-/// <summary>Whether a pending pick assigns a base (BaseSelection) or a conquered territory (Conquest grab).</summary>
-public enum PickKind
-{
-    Base,
-    Grab,
-}
-
-/// <summary>Map, base selection, Conquest grabs and phase transitions of a room (plan §4.2, §4.4). Everything runs under the room lock.</summary>
+/// <summary>Map, phases, turn order and territory picks of a room (plan §4.2, §4.4). Everything runs under the room lock.</summary>
 public sealed partial class GameRoom
 {
     private sealed record PickState(
-        long Seq, PickKind Kind, Guid PlayerId, DateTimeOffset Deadline, IReadOnlyList<int> Valid, bool Relaxed);
+        long Seq, PickPurpose Purpose, Guid PlayerId, DateTimeOffset Deadline, IReadOnlyList<int> Valid);
 
     private GameMap? _map;
-    private bool _baseOrderEstablished;
+
+    /// <summary>Turn order (player ids), front first. Set randomly at game start, rotated right each Conquest/Duel round.</summary>
+    private readonly List<Guid> _turnOrder = [];
+    private bool _basesComplete;
+
     private readonly List<Guid> _pickQueue = [];
-    private PickKind _pickQueueKind = PickKind.Base;
     private PickState? _pick;
     private long _pickSeq;
 
-    /// <summary>Randomness for auto-picks; tests replace it with a seeded instance.</summary>
+    /// <summary>Conquest claim stage: player id → the free tile they claimed this round (owned only if they then answer right).</summary>
+    private readonly Dictionary<Guid, int> _claims = [];
+
+    private int _conquestRound;   // 0 before the first Conquest round
+    private int _duelRound;       // 0 before the first Duel round
+
+    /// <summary>Randomness for auto-picks and the initial turn-order shuffle; tests replace it with a seeded instance.</summary>
     public Random PickRandom { get; set; } = Random.Shared;
 
     public MapDto? GetMap()
@@ -82,17 +86,27 @@ public sealed partial class GameRoom
         lock (_gate) return _map?.OwnerOf(territoryIndex);
     }
 
-    /// <summary>Score table, best first: score, then territories, then earlier base rank, then join order.</summary>
+    public IReadOnlyList<Guid> TurnOrder
+    {
+        get { lock (_gate) return _turnOrder.ToList(); }
+    }
+
+    /// <summary>Score table, best first: score, then territories, then turn position, then join order.</summary>
     public IReadOnlyList<ScoreEntry> Scoreboard()
     {
         lock (_gate) return ScoreboardCore();
     }
 
+    // Score = value of owned territories + accumulated Duel bonus (plan §4.3).
+    private int ScoreOfCore(Guid playerId) =>
+        (_map is { } map ? MapService.ScoreOf(map, playerId) : 0)
+        + (_players.FirstOrDefault(p => p.Id == playerId)?.BonusPoints ?? 0);
+
     private IReadOnlyList<ScoreEntry> ScoreboardCore()
     {
         if (_map is not { } map) return [];
         return _players
-            .Select((p, order) => (Player: p, Order: order, Score: MapService.ScoreOf(map, p.Id), Count: map.OwnedBy(p.Id).Count()))
+            .Select((p, order) => (Player: p, Order: order, Score: ScoreOfCore(p.Id), Count: map.OwnedBy(p.Id).Count()))
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Count)
             .ThenBy(x => x.Player.BaseRank ?? int.MaxValue)
@@ -115,7 +129,10 @@ public sealed partial class GameRoom
         }
     }
 
-    /// <summary>Lobby → BaseSelection: needs <c>MinPlayers</c> connected players; generates the map (plan §4.2).</summary>
+    /// <summary>
+    /// Lobby → BaseSelection: needs <c>MinPlayers</c> connected players; generates the map, fixes a random turn order
+    /// and starts the first base pick right away (plan §4.2).
+    /// </summary>
     public StartGameResult TryStartGame(DateTimeOffset now)
     {
         lock (_gate)
@@ -127,36 +144,51 @@ public sealed partial class GameRoom
 
             _map = MapService.Create(Settings, _players.Count);
             _phase = GamePhase.BaseSelection;
+
+            // Random turn order; it also fixes each player's 1-based base-pick position.
+            var shuffled = _players.Select(p => p.Id).OrderBy(_ => PickRandom.Next()).ToList();
+            _turnOrder.Clear();
+            _turnOrder.AddRange(shuffled);
+            for (var i = 0; i < _turnOrder.Count; i++)
+                _players.First(p => p.Id == _turnOrder[i]).BaseRank = i + 1;
+
+            // Queue every player for a base pick, in turn order; the first is asked immediately.
+            _pickQueue.Clear();
+            _pickQueue.AddRange(_turnOrder);
+            AdvancePickCore(PickPurpose.Base, now);
+
             _lastActivity = now;
-            return new StartGameResult(PhaseError.None, _map.ToDto());
+            return new StartGameResult(PhaseError.None, _map.ToDto(), _turnOrder.ToList());
         }
     }
 
     /// <summary>
-    /// BaseSelection → Conquest (all bases picked, no round open) and Conquest → Results (no round open).
-    /// Lobby → BaseSelection is <see cref="TryStartGame"/>; anything else is an invalid transition (no skipping, no going back).
+    /// Forward-only phase transitions (no skipping, no going back):
+    /// BaseSelection → Conquest (all bases picked), Conquest → Expansion (no round / pick pending),
+    /// Expansion → Duel (map full), Duel → Results. Lobby → BaseSelection is <see cref="TryStartGame"/>.
     /// </summary>
     public PhaseResult TryAdvancePhase(GamePhase target, DateTimeOffset now)
     {
         lock (_gate)
         {
-            if (target is not (GamePhase.Conquest or GamePhase.Results) || (int)target != (int)_phase + 1)
+            if (target is not (GamePhase.Conquest or GamePhase.Expansion or GamePhase.Duel or GamePhase.Results)
+                || (int)target != (int)_phase + 1)
                 return new PhaseResult(PhaseError.InvalidTransition, _phase);
             if (_round is not null)
                 return new PhaseResult(PhaseError.RoundInProgress, _phase);
-            // A grab pick still waiting counts as a round in progress for Conquest → Results.
-            if (target == GamePhase.Results && (_pick is not null || _pickQueue.Count > 0))
-                return new PhaseResult(PhaseError.RoundInProgress, _phase);
-            if (target == GamePhase.Conquest && !BasesCompleteCore)
+            if (_pick is not null || _pickQueue.Count > 0 || _claims.Count > 0)
+                return new PhaseResult(PhaseError.PickInProgress, _phase);
+
+            if (target == GamePhase.Conquest && !_basesComplete)
                 return new PhaseResult(PhaseError.BaseSelectionIncomplete, _phase);
+            if (target == GamePhase.Duel && _map is { } m && MapService.FreeTerritories(m).Count > 0)
+                return new PhaseResult(PhaseError.PhaseNotComplete, _phase); // Expansion fills the whole map first
 
             _phase = target;
             _lastActivity = now;
             return new PhaseResult(PhaseError.None, _phase);
         }
     }
-
-    private bool BasesCompleteCore => _baseOrderEstablished && _pick is null && _pickQueue.Count == 0;
 
     /// <summary>Final standings and map for <c>GameFinished</c>; ties on score share a rank.</summary>
     public GameFinishedDto BuildGameFinished()
@@ -179,7 +211,7 @@ public sealed partial class GameRoom
         }
     }
 
-    // ---- base selection ----
+    // ---- picks (shared machinery for base / conquest-claim / expansion / duel-target) ----
 
     public PickView? CurrentPickView()
     {
@@ -188,46 +220,22 @@ public sealed partial class GameRoom
 
     private PickView? PickViewCore() =>
         _pick is { } pick && _players.FirstOrDefault(p => p.Id == pick.PlayerId) is { } picker
-            ? new PickView(pick.Seq, picker.ToSummary(), pick.Deadline, pick.Valid, pick.Relaxed)
+            ? new PickView(pick.Seq, pick.Purpose, picker.ToSummary(), pick.Deadline, pick.Valid)
             : null;
 
-    private static CurrentPickDto PickDto(PickState pick, Guid? viewer) => new()
-    {
-        PickerPlayerId = pick.PlayerId,
-        PickDeadlineUtc = pick.Deadline,
-        ValidTerritoryIndices = viewer == pick.PlayerId ? pick.Valid : [],
-    };
+    private CurrentPickDto? CurrentPickDtoFor(Guid? viewer) =>
+        _pick is { } pick
+            ? new CurrentPickDto
+            {
+                PickerPlayerId = pick.PlayerId,
+                PickDeadlineUtc = pick.Deadline,
+                ValidTerritoryIndices = viewer == pick.PlayerId ? pick.Valid : [],
+                Purpose = pick.Purpose,
+            }
+            : null;
 
-    /// <summary>The base-order round is closed: players pick in ranking order, the first one right away.</summary>
-    private void BeginBasePickingCore(IReadOnlyList<Guid> order, DateTimeOffset now)
-    {
-        var rank = 0;
-        foreach (var id in order)
-        {
-            var player = _players.FirstOrDefault(p => p.Id == id);
-            if (player is null) continue;
-            player.BaseRank = ++rank;
-            _pickQueue.Add(id);
-        }
-
-        _baseOrderEstablished = true;
-        _pickQueueKind = PickKind.Base;
-        AdvancePickCore(now);
-    }
-
-    /// <summary>A Grab round is closed: its winners pick a free adjacent territory, in speed order (plan §4.2 Conquest).</summary>
-    private void BeginGrabPickingCore(IReadOnlyList<Guid> winners, DateTimeOffset now)
-    {
-        foreach (var id in winners)
-            if (_players.Any(p => p.Id == id))
-                _pickQueue.Add(id);
-
-        _pickQueueKind = PickKind.Grab;
-        AdvancePickCore(now);
-    }
-
-    /// <summary>Makes the next player in the queue the current picker (skipping players who left or have no valid cell).</summary>
-    private void AdvancePickCore(DateTimeOffset now)
+    /// <summary>Makes the next queued player the current picker for <paramref name="purpose"/>, skipping players who left or have no valid cell.</summary>
+    private void AdvancePickCore(PickPurpose purpose, DateTimeOffset now)
     {
         _pick = null;
         if (_map is null) return;
@@ -238,39 +246,46 @@ public sealed partial class GameRoom
             _pickQueue.RemoveAt(0);
             if (_players.All(p => p.Id != id)) continue;
 
-            var (valid, relaxed) = ValidPicksFor(id);
-            if (valid.Count == 0) continue; // nothing left to pick for this player
+            var valid = ValidPicksFor(purpose, id);
+            if (valid.Count == 0) continue; // nothing to pick for this player (e.g. no free tile): skip
 
             var seconds = Math.Max(1, Settings.PickTimeoutSeconds);
-            _pick = new PickState(++_pickSeq, _pickQueueKind, id, now.AddSeconds(seconds), valid, relaxed);
+            _pick = new PickState(++_pickSeq, purpose, id, now.AddSeconds(seconds), valid);
             return;
         }
+
+        // Queue drained with nobody left to ask.
+        if (purpose == PickPurpose.Base) _basesComplete = true;
     }
 
-    /// <summary>Valid cells for the player whose turn it is, by pick kind.</summary>
-    private (IReadOnlyList<int> Indices, bool Relaxed) ValidPicksFor(Guid playerId)
+    private IReadOnlyList<int> ValidPicksFor(PickPurpose purpose, Guid playerId) => _map is not { } map ? [] : purpose switch
     {
-        if (_map is null) return ([], false);
-        if (_pickQueueKind == PickKind.Base)
-        {
-            var picks = MapService.ValidBasePicks(_map, Settings.DisallowAdjacentBases);
-            return (picks.Indices, picks.Relaxed);
-        }
+        PickPurpose.Base => MapService.ValidBasePicks(map, Settings.DisallowAdjacentBases).Indices,
+        PickPurpose.ConquestClaim => ClaimableFor(map, playerId),
+        PickPurpose.Expansion => MapService.FreeTerritories(map),
+        PickPurpose.DuelTarget => MapService.ValidDuelTargets(map, playerId),
+        _ => [],
+    };
 
-        return (MapService.ValidGrabPicks(_map, playerId), false);
+    // Conquest claim: a free tile adjacent to the player's own, else any free tile, excluding tiles already claimed this round.
+    private IReadOnlyList<int> ClaimableFor(GameMap map, Guid playerId)
+    {
+        var claimed = _claims.Values.ToHashSet();
+        var valid = MapService.ValidAdjacentPicks(map, playerId).Where(i => !claimed.Contains(i)).ToList();
+        if (valid.Count > 0) return valid;
+        // Adjacent set was fully claimed; fall back to any unclaimed free tile.
+        return MapService.FreeTerritories(map).Where(i => !claimed.Contains(i)).ToList();
     }
 
-    /// <summary>The current picker chooses a territory (a base in BaseSelection, a grabbed cell in Conquest).</summary>
+    /// <summary>The current picker chooses a territory. The territory must be one of the valid ones.</summary>
     public PickResult TryPick(Guid playerId, int territoryIndex, DateTimeOffset now)
     {
         lock (_gate)
         {
-            if (_phase is not (GamePhase.BaseSelection or GamePhase.Conquest)) return new PickResult(PickError.InvalidPhase);
             if (_pick is not { } pick) return new PickResult(PickError.NoActivePick);
             if (pick.PlayerId != playerId) return new PickResult(PickError.NotYourPick);
             if (!pick.Valid.Contains(territoryIndex)) return new PickResult(PickError.InvalidPick);
-
-            return new PickResult(PickError.None, AssignPickCore(pick, territoryIndex, now));
+            return ResolvePickCore(pick, territoryIndex, now);
         }
     }
 
@@ -279,80 +294,136 @@ public sealed partial class GameRoom
     {
         lock (_gate)
         {
-            if (_phase is not (GamePhase.BaseSelection or GamePhase.Conquest) || _pick is not { } pick || pick.Seq != pickSeq)
-                return new PickResult(PickError.NoActivePick);
-
+            if (_pick is not { } pick || pick.Seq != pickSeq) return new PickResult(PickError.NoActivePick);
             var index = MapService.AutoPick(pick.Valid, PickRandom);
             if (index is null) return new PickResult(PickError.NoActivePick);
-            return new PickResult(PickError.None, AssignPickCore(pick, index.Value, now));
+            return ResolvePickCore(pick, index.Value, now);
         }
     }
 
-    private MapChange AssignPickCore(PickState pick, int index, DateTimeOffset now)
+    private PickResult ResolvePickCore(PickState pick, int index, DateTimeOffset now)
     {
-        var territory = _map!.Get(index)!;
-        territory.OwnerId = pick.PlayerId;
-        if (pick.Kind == PickKind.Base)
-        {
-            territory.IsBase = true;
-            territory.Value = Settings.BaseValue;
-        }
-        else
-        {
-            territory.IsBase = false;
-            territory.Value = Settings.TerritoryValue;
-        }
-
         _lastActivity = now;
-
-        AdvancePickCore(now);
-        return new MapChange([territory.ToDto()], ScoreboardCore(), PickViewCore(), _pick is null && _pickQueue.Count == 0);
+        switch (pick.Purpose)
+        {
+            case PickPurpose.Base:
+            {
+                var t = AssignCore(index, pick.PlayerId, isBase: true);
+                AdvancePickCore(PickPurpose.Base, now);
+                return new PickResult(PickError.None, new MapChange([t.ToDto()], ScoreboardCore(), PickViewCore(), _pick is null && _pickQueue.Count == 0));
+            }
+            case PickPurpose.Expansion:
+            {
+                var t = AssignCore(index, pick.PlayerId, isBase: false);
+                _pick = null; // Expansion asks one picker per estimation round
+                return new PickResult(PickError.None, new MapChange([t.ToDto()], ScoreboardCore(), null, true));
+            }
+            case PickPurpose.ConquestClaim:
+            {
+                _claims[pick.PlayerId] = index;
+                AdvancePickCore(PickPurpose.ConquestClaim, now);
+                var allIn = _pick is null && _pickQueue.Count == 0;
+                return new PickResult(PickError.None, new MapChange([], ScoreboardCore(), PickViewCore(), allIn), allIn);
+            }
+            default:
+                return new PickResult(PickError.InvalidPick); // DuelTarget uses the nomination flow, not TryPick
+        }
     }
+
+    // Assigns ownership and sets base/normal value and health.
+    private Territory AssignCore(int index, Guid ownerId, bool isBase)
+    {
+        var t = _map!.Get(index)!;
+        t.OwnerId = ownerId;
+        t.IsBase = isBase;
+        t.Value = isBase ? Settings.BaseValue : Settings.TerritoryValue;
+        t.Health = isBase ? Math.Max(1, Settings.BaseHealth) : 1;
+        return t;
+    }
+
+    // ---- Conquest claim stage ----
+
+    /// <summary>Begins a Conquest claim stage: every player in turn order claims one free tile, the first asked at once.</summary>
+    private void BeginConquestClaimsCore(DateTimeOffset now)
+    {
+        _claims.Clear();
+        _pickQueue.Clear();
+        _pickQueue.AddRange(_turnOrder.Where(id => _players.Any(p => p.Id == id)));
+        AdvancePickCore(PickPurpose.ConquestClaim, now);
+    }
+
+    /// <summary>Whether a Conquest claim stage is open (players still choosing tiles before the question).</summary>
+    public bool ClaimsOpen
+    {
+        get { lock (_gate) return _pick is { Purpose: PickPurpose.ConquestClaim } || (_claims.Count > 0 && _round is null); }
+    }
+
+    // ---- turn order ----
+
+    /// <summary>Right-rotates the turn order: the front player moves to the back (1st → last). Plan §4.2.</summary>
+    private void RotateTurnOrderCore()
+    {
+        if (_turnOrder.Count < 2) return;
+        var front = _turnOrder[0];
+        _turnOrder.RemoveAt(0);
+        _turnOrder.Add(front);
+    }
+
+    private Guid? ActivePlayerCore() => _turnOrder.FirstOrDefault(id => _players.Any(p => p.Id == id)) is var id && id != Guid.Empty ? id : null;
+
+    // ---- player removal ----
 
     /// <summary>
     /// A player was kicked or left: their territories become free again and, if they were up to pick,
-    /// the next player is. Returns null if nothing on the map or in the pick queue changed.
+    /// the next player is asked. Returns null if nothing on the map or in the pick queue changed.
     /// </summary>
     public MapChange? HandlePlayerRemoved(Guid playerId, DateTimeOffset now)
     {
         lock (_gate)
         {
-            var freed = new List<TerritoryDto>();
-            if (_map is { } map)
-            {
-                foreach (var t in map.OwnedBy(playerId).ToList())
-                {
-                    t.OwnerId = null;
-                    t.IsBase = false;
-                    t.Value = Settings.TerritoryValue;
-                    freed.Add(t.ToDto());
-                }
-            }
+            var freed = FreeAllOf(playerId);
 
+            _turnOrder.Remove(playerId);
             _pickQueue.RemoveAll(id => id == playerId);
+            _claims.Remove(playerId);
 
-            // A pending battle nomination that involves the leaver is no longer valid.
+            // A pending duel nomination that involves the leaver is no longer valid.
             if (_nomination is { } nomination && (nomination.AttackerId == playerId || nomination.DefenderId == playerId))
                 _nomination = null;
 
             var pickerLeft = _pick?.PlayerId == playerId;
             if (pickerLeft)
             {
-                AdvancePickCore(now);
+                AdvancePickCore(_pick!.Purpose, now);
             }
-            else if (freed.Count > 0 && _pick is { } pending && _map is not null)
+            else if (freed.Count > 0 && _pick is { } pending)
             {
-                // Freed cells may become pickable for whoever is up now (their open PickRequested keeps its old list).
-                var (valid, relaxed) = ValidPicksFor(pending.PlayerId);
-                _pick = pending with { Valid = valid, Relaxed = relaxed };
+                var valid = ValidPicksFor(pending.Purpose, pending.PlayerId);
+                _pick = pending with { Valid = valid };
             }
 
             if (freed.Count == 0 && !pickerLeft) return null;
-
-            return new MapChange(freed, ScoreboardCore(), PickViewCore(), _baseOrderEstablished && _pick is null && _pickQueue.Count == 0);
+            return new MapChange(freed, ScoreboardCore(), PickViewCore(), _pick is null && _pickQueue.Count == 0);
         }
+    }
+
+    // Frees every tile a player owns (used on removal and on losing the last base). Returns the changed cells.
+    private List<TerritoryDto> FreeAllOf(Guid playerId)
+    {
+        var freed = new List<TerritoryDto>();
+        if (_map is not { } map) return freed;
+        foreach (var t in map.OwnedBy(playerId).ToList())
+        {
+            t.OwnerId = null;
+            t.IsBase = false;
+            t.Value = Settings.TerritoryValue;
+            t.Health = 1;
+            freed.Add(t.ToDto());
+        }
+
+        return freed;
     }
 }
 
 /// <summary>A territory as it is persisted (plan §5.1 Territories, §7.4).</summary>
-public sealed record TerritoryRecord(int Index, int Row, int Col, int Value, bool IsBase, Guid? OwnerPlayerId);
+public sealed record TerritoryRecord(int Index, int Row, int Col, int Value, bool IsBase, int Health, Guid? OwnerPlayerId);

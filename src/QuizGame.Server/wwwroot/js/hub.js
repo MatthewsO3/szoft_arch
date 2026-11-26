@@ -33,6 +33,7 @@ export function createHub(token, handlers) {
     leaveRoom: () => connection.invoke(Methods.LeaveRoom),
     submitAnswer: (answer) => connection.invoke(Methods.SubmitAnswer, answer),
     pickTerritory: (index) => connection.invoke(Methods.PickTerritory, index),
+    nominateTarget: (index) => connection.invoke(Methods.NominateTarget, index),
     ping: () => connection.invoke(Methods.Ping),
     rejoin: () => connection.invoke(Methods.Rejoin),
   };

@@ -109,7 +109,7 @@ public class PhaseControlViewModelTests
         Assert.False(vm.NextPhaseCommand.CanExecute(null));
         Assert.Contains("round is open", vm.StatusGuidance, StringComparison.OrdinalIgnoreCase);
 
-        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.BaseOrder });
+        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Expansion });
         Assert.True(vm.NextPhaseCommand.CanExecute(null));
 
         vm.SetConnectionState(false);
@@ -136,7 +136,7 @@ public class PhaseControlViewModelTests
         vm.SetRoundOpen(true);
         Assert.Equal("", vm.ActivePickerName);
 
-        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Grab });
+        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Conquest });
         vm.ApplyPickWaiting(new PlayerSummary { Id = Guid.NewGuid(), Name = "Cili" });
         vm.ApplyPhaseChanged(GamePhase.Results);
         Assert.Equal("", vm.ActivePickerName);
@@ -147,13 +147,13 @@ public class PhaseControlViewModelTests
     {
         var p1 = Guid.NewGuid();
         var vm = new PhaseControlViewModel(new FakeRoomControlClient());
-        vm.SetRoomOpened(new RoomSettings { SuggestedMaxRounds = 2 });
+        vm.SetRoomOpened(new RoomSettings { DuelRounds = 2 });
         vm.SetConnectionState(true);
         vm.SetPlayerCounts(2, 2);
 
         // BaseSelection round closes must not count toward Conquest rounds
         vm.ApplyPhaseChanged(GamePhase.BaseSelection);
-        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.BaseOrder });
+        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Expansion });
         Assert.Equal(0, vm.ConquestRoundsCompleted);
         Assert.False(vm.SuggestEndConquest);
 
@@ -162,7 +162,7 @@ public class PhaseControlViewModelTests
         {
             RoomCode = "123456",
             Phase = GamePhase.Conquest,
-            Settings = new RoomSettings { SuggestedMaxRounds = 2 },
+            Settings = new RoomSettings { DuelRounds = 2 },
             Players =
             [
                 new PlayerSummary { Id = p1, Name = "Anna", Connected = true },
@@ -180,9 +180,9 @@ public class PhaseControlViewModelTests
         Assert.Equal(1, vm.OwnedTerritories);
 
         // Round limit reached -> suggestion activates
-        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Grab });
+        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Conquest });
         Assert.False(vm.SuggestEndConquest);
-        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Grab });
+        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Conquest });
         Assert.True(vm.ReachedSuggestedMaxRounds);
         Assert.True(vm.SuggestEndConquest);
         Assert.Contains("2/2 suggested rounds", vm.ConquestSuggestionText);
@@ -254,3 +254,4 @@ public class PhaseControlViewModelTests
         Assert.Equal("Custom REST error", HostErrorFormatter.FormatMessage("  Custom REST error  "));
     }
 }
+

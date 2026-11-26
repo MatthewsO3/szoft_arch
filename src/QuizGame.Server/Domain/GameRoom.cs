@@ -39,8 +39,11 @@ public sealed partial class GameRoom
         public DateTimeOffset JoinedAt { get; } = joinedAt;
         public bool IsConnected { get; set; }
 
-        /// <summary>1-based pick order from the base-selection round; null until it has been played.</summary>
+        /// <summary>1-based turn position fixed at game start; null until the game starts.</summary>
         public int? BaseRank { get; set; }
+
+        /// <summary>Accumulated Duel bonus points (defender-correct / draw), added to territory value for the score (plan §4.3).</summary>
+        public int BonusPoints { get; set; }
 
         public PlayerSummary ToSummary() =>
             new() { Id = Id, Name = Name, ColorHex = ColorHex, Connected = IsConnected, BaseRank = BaseRank };
@@ -148,15 +151,25 @@ public sealed partial class GameRoom
     {
         lock (_gate)
         {
+            var (number, total) = _phase switch
+            {
+                GamePhase.Conquest => ((int?)_conquestRound, (int?)Settings.ConquestRounds),
+                GamePhase.Duel => ((int?)_duelRound, (int?)Settings.DuelRounds),
+                _ => (null, null),
+            };
+
             return new RoomStateDto
             {
                 RoomCode = Code,
                 Phase = _phase,
                 Settings = Settings,
                 Players = _players.Select(p => p.ToSummary()).ToList(),
+                TurnOrder = _turnOrder.ToList(),
+                RoundNumber = number,
+                RoundsTotal = total,
                 Map = _map?.ToDto(),
                 CurrentRound = _round?.ToCurrentDto(),
-                CurrentPick = _pick is { } pick ? PickDto(pick, playerId) : null,
+                CurrentPick = CurrentPickDtoFor(playerId),
                 PlayerQuestion = playerId is { } id && _round?.Info.ParticipantIds.Contains(id) == true ? _round.Info.ForPlayer() : null,
                 HostQuestion = forHost && _round is { } r ? r.Info.ForHost() : null,
                 HasAnswered = playerId is { } player && _round?.HasAnswered(player) == true,

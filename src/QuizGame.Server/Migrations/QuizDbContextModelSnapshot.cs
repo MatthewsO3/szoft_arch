@@ -317,6 +317,9 @@ namespace QuizGame.Server.Migrations
                     b.Property<int>("Col")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Health")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Index")
                         .HasColumnType("integer");
 

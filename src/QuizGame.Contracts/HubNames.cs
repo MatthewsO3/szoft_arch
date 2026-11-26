@@ -20,7 +20,7 @@ public static class HubNames
         public const string AdvancePhase = "AdvancePhase";
         public const string SendQuestion = "SendQuestion";
         public const string CloseRound = "CloseRound";
-        public const string ConfirmBattle = "ConfirmBattle";
+        public const string ConfirmDuel = "ConfirmDuel";
         public const string SubmitAnswer = "SubmitAnswer";
         public const string PickTerritory = "PickTerritory";
         public const string NominateTarget = "NominateTarget";
@@ -39,8 +39,8 @@ public static class HubNames
         public const string PhaseChanged = "PhaseChanged";
         public const string MapUpdated = "MapUpdated";
         public const string QuestionStarted = "QuestionStarted";
-        public const string BattleAnnounced = "BattleAnnounced";
-        public const string BattleNominated = "BattleNominated";
+        public const string DuelAnnounced = "DuelAnnounced";
+        public const string DuelNominated = "DuelNominated";
         public const string AnswerCountChanged = "AnswerCountChanged";
         public const string RoundClosed = "RoundClosed";
         public const string PickRequested = "PickRequested";
