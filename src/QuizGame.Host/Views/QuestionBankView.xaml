@@ -71,7 +71,18 @@
 
         <!-- Questions grid -->
         <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Margin="0,0,0,8">
+                <CheckBox DockPanel.Dock="Right" Content="Manage all questions"
+                          IsChecked="{Binding ManageAllQuestions}" Margin="12,0,0,0"
+                          ToolTip="Allow selecting any question for editing. Sending still requires the correct type for the current phase." />
+                <TextBlock Text="{Binding QuestionTypeGuidance}" TextWrapping="Wrap" Foreground="#92400E" />
+            </DockPanel>
             <DataGrid x:Name="QuestionsGrid"
+                      Grid.Row="1"
                       ItemsSource="{Binding Questions}"
                       SelectedItem="{Binding SelectedQuestion, Mode=TwoWay}"
                       AutoGenerateColumns="False"
@@ -87,6 +98,16 @@
                       AlternatingRowBackground="#FAFAFA"
                       RowHeight="30"
                       MouseDoubleClick="QuestionsGrid_MouseDoubleClick">
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="IsEnabled" Value="{Binding IsSelectable}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSelectable}" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Question" Binding="{Binding Text}" Width="*" MinWidth="220" IsReadOnly="True">
                         <DataGridTextColumn.ElementStyle>
@@ -114,6 +135,7 @@
             </DataGrid>
 
             <TextBlock Text="No questions match the current filters."
+                       Grid.Row="1"
                        Visibility="{Binding HasNoQuestions, Converter={StaticResource B2V}}"
                        HorizontalAlignment="Center"
                        VerticalAlignment="Center"
@@ -122,6 +144,7 @@
                        IsHitTestVisible="False" />
 
             <Border Visibility="{Binding IsLoading, Converter={StaticResource B2V}}"
+                    Grid.Row="1"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"
                     Margin="0,34,12,0"
