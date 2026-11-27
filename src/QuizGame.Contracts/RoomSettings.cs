@@ -40,8 +40,8 @@ public sealed record RoomSettings
     /// <summary>Default per-question answer window when the question does not override it.</summary>
     public int DefaultQuestionSeconds { get; init; } = 20;
 
-    /// <summary>Forbid choosing a base adjacent to another base during BaseSelection (optional rule, plan §4.2).</summary>
-    public bool DisallowAdjacentBases { get; init; } = false;
+    /// <summary>Forbid choosing a base adjacent to another base during BaseSelection (enabled by default, plan §4.2).</summary>
+    public bool DisallowAdjacentBases { get; init; } = true;
 }
 
 /// <summary>Fixed map size presets (plan §4.4). Host may override dimensions.</summary>

@@ -20,7 +20,7 @@ public class RoomSettingsViewModelTests
         Assert.Equal("2", vm.MinPlayersText);
         Assert.Equal("20", vm.PickTimeoutSecondsText);
         Assert.Equal("20", vm.DefaultQuestionSecondsText);
-        Assert.False(vm.DisallowAdjacentBases);
+        Assert.True(vm.DisallowAdjacentBases);
 
         Assert.False(vm.HasRoom);
         Assert.True(vm.CanEdit);
@@ -137,7 +137,7 @@ public class RoomSettingsViewModelTests
         vm.PickTimeoutSecondsText = "15";
         vm.DefaultQuestionSecondsText = "25";
         vm.SuggestedMaxRoundsText = "8";
-        vm.DisallowAdjacentBases = true;
+        vm.DisallowAdjacentBases = false;
 
         Assert.True(vm.HasUnsavedChanges);
         Assert.True(vm.ApplySettingsCommand.CanExecute(null));
@@ -149,12 +149,12 @@ public class RoomSettingsViewModelTests
         Assert.False(vm.HasUnsavedChanges);
         Assert.Equal(MapPreset.Medium, vm.SelectedMapPreset.Value);
         Assert.Equal("100", vm.TerritoryValueText);
-        Assert.False(vm.DisallowAdjacentBases);
+        Assert.True(vm.DisallowAdjacentBases);
 
         // Edit again and apply
         vm.SelectedMapPreset = vm.MapPresets.Single(p => p.Value == MapPreset.Large);
         vm.MinPlayersText = "5";
-        vm.DisallowAdjacentBases = true;
+        vm.DisallowAdjacentBases = false;
         Assert.True(vm.ApplySettingsCommand.CanExecute(null));
 
         await vm.ApplySettingsAsync();
@@ -162,7 +162,7 @@ public class RoomSettingsViewModelTests
         var sent = Assert.Single(client.UpdatedSettings);
         Assert.Equal(MapPreset.Large, sent.MapPreset);
         Assert.Equal(5, sent.MinPlayers);
-        Assert.True(sent.DisallowAdjacentBases);
+        Assert.False(sent.DisallowAdjacentBases);
         Assert.Equal(sent, vm.AppliedSettings);
         Assert.Equal(sent, callbackSettings);
         Assert.False(vm.HasUnsavedChanges);
@@ -174,7 +174,7 @@ public class RoomSettingsViewModelTests
         vm.ResetDefaultsCommand.Execute(null);
         Assert.Equal(MapPreset.Medium, vm.SelectedMapPreset.Value);
         Assert.Equal("2", vm.MinPlayersText);
-        Assert.False(vm.DisallowAdjacentBases);
+        Assert.True(vm.DisallowAdjacentBases);
         Assert.True(vm.HasUnsavedChanges);
     }
 
@@ -217,7 +217,7 @@ public class RoomSettingsViewModelTests
             PickTimeoutSeconds = 30,
             DefaultQuestionSeconds = 45,
             DuelRounds = 15,
-            DisallowAdjacentBases = true
+            DisallowAdjacentBases = false
         };
 
         vm.SyncFromRoomState(new RoomStateDto
@@ -240,7 +240,7 @@ public class RoomSettingsViewModelTests
         Assert.Equal("30", vm.PickTimeoutSecondsText);
         Assert.Equal("45", vm.DefaultQuestionSecondsText);
         Assert.Equal("15", vm.SuggestedMaxRoundsText);
-        Assert.True(vm.DisallowAdjacentBases);
+        Assert.False(vm.DisallowAdjacentBases);
         Assert.False(vm.HasUnsavedChanges);
     }
 

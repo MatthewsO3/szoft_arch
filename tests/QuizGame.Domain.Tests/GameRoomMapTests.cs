@@ -108,6 +108,24 @@ public class GameRoomMapTests
     }
 
     [Fact]
+    public void Base_selection_disallows_adjacent_bases_by_default()
+    {
+        var (room, _, _, _) = NewRoom();
+        var started = room.TryStartGame(Make.T0);
+        Assert.True(started.Ok);
+        var cols = started.Map!.Cols;
+
+        var firstPick = room.CurrentPickView()!;
+        Assert.True(room.TryPick(firstPick.Picker.Id, 0, Make.T0.AddSeconds(1)).Ok);
+
+        var secondPick = room.CurrentPickView()!;
+        Assert.DoesNotContain(1, secondPick.ValidTerritoryIndices);
+        Assert.DoesNotContain(cols, secondPick.ValidTerritoryIndices);
+        Assert.Equal(PickError.InvalidPick, room.TryPick(secondPick.Picker.Id, 1, Make.T0.AddSeconds(2)).Error);
+        Assert.Equal(PickError.InvalidPick, room.TryPick(secondPick.Picker.Id, cols, Make.T0.AddSeconds(2)).Error);
+    }
+
+    [Fact]
     public void Conquest_needs_a_finished_base_selection()
     {
         var (room, _, _, _) = NewRoom();
