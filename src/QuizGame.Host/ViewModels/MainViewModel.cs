@@ -40,9 +40,10 @@ public sealed class PlayerItem(PlayerSummary dto) : ViewModelBase
 public sealed class MainViewModel : ViewModelBase
 {
     private readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
-    private readonly GameConnection _connection = new();
+    private readonly GameConnection _connection;
+    private readonly IApiClientFactory _apiClientFactory;
+    private readonly IClipboardService _clipboard;
     private readonly DispatcherTimer _pickCountdownTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
-    private readonly Action<string> _copyToClipboard;
     private ApiClient? _api;
     private string? _token;
 
@@ -63,14 +64,21 @@ public sealed class MainViewModel : ViewModelBase
     private string _answerProgress = "";
     private int _copyFeedbackVersion;
 
-    public MainViewModel() : this(new WpfQuestionBankDialogService(), text => System.Windows.Clipboard.SetText(text))
+    public MainViewModel(
+        GameConnection connection,
+        IApiClientFactory apiClientFactory,
+        IClipboardService clipboard,
+        QuestionViewModel question,
+        MapViewModel map,
+        QuestionBankViewModel questionBank)
     {
-    }
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
+        _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
+        Question = question ?? throw new ArgumentNullException(nameof(question));
+        Map = map ?? throw new ArgumentNullException(nameof(map));
+        QuestionBank = questionBank ?? throw new ArgumentNullException(nameof(questionBank));
 
-    public MainViewModel(IQuestionBankDialogService questionBankDialogs, Action<string>? copyToClipboard = null)
-    {
-        _copyToClipboard = copyToClipboard ?? (_ => { });
-        QuestionBank = new QuestionBankViewModel(questionBankDialogs);
         PhaseControl = new PhaseControlViewModel(_connection, message => ErrorMessage = message);
         _pickCountdownTimer.Tick += (_, _) => PhaseControl.RefreshPickCountdown();
         PhaseControl.PropertyChanged += (_, e) =>
@@ -199,8 +207,8 @@ public sealed class MainViewModel : ViewModelBase
         });
     }
 
-    public QuestionViewModel Question { get; } = new();
-    public MapViewModel Map { get; } = new();
+    public QuestionViewModel Question { get; }
+    public MapViewModel Map { get; }
 
     public ObservableCollection<PlayerItem> Players { get; } = [];
     public QuestionBankViewModel QuestionBank { get; }
@@ -346,7 +354,7 @@ public sealed class MainViewModel : ViewModelBase
     private async Task LoginAsync()
     {
         ErrorMessage = "";
-        var api = new ApiClient(ServerUrl);
+        var api = _apiClientFactory.Create(ServerUrl);
         try
         {
             var login = await api.LoginAsync(Username, Password);
@@ -429,7 +437,7 @@ public sealed class MainViewModel : ViewModelBase
         ErrorMessage = "";
         try
         {
-            _copyToClipboard(RoomCode);
+            _clipboard.SetText(RoomCode);
         }
         catch (Exception ex)
         {
@@ -524,6 +532,8 @@ public sealed class MainViewModel : ViewModelBase
         _pickCountdownTimer.Stop();
         Question.Dispose();
         Map.Dispose();
+        _api?.Dispose();
+        _api = null;
         return _connection.StopAsync();
     }
 }
