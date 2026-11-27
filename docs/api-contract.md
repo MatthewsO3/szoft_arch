@@ -87,6 +87,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `PhaseChanged` | room | `GamePhase` |
 | `MapUpdated` | room | `MapUpdate` (changed cells + scoreboard) |
 | `QuestionStarted` | gm group | `QuestionForHost { roundId, question: QuestionDto, serverDeadlineUtc }` (includes correct answer) |
+| `QuestionSelectionAvailabilityChanged` | gm group | `bool` — authoritative indication that the host may send the next question |
 | `QuestionStarted` | players group | `QuestionForPlayer` (no correct answer); Conquest → only the claimers; Duel → only the two players |
 | `DuelAnnounced` | non-participants | `DuelAnnouncement { attackerId, defenderId, targetTerritoryIndex }` |
 | `DuelNominated` | gm group | `DuelNominationDto { attackerId, defenderId, targetTerritoryIndex }` (awaiting the host's `ConfirmDuel`) |

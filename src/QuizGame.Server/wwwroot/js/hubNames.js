@@ -26,6 +26,7 @@ export const Events = Object.freeze({
   PhaseChanged: 'PhaseChanged',
   MapUpdated: 'MapUpdated',
   QuestionStarted: 'QuestionStarted',
+  QuestionSelectionAvailabilityChanged: 'QuestionSelectionAvailabilityChanged',
   DuelAnnounced: 'DuelAnnounced',
   DuelNominated: 'DuelNominated',
   AnswerCountChanged: 'AnswerCountChanged',

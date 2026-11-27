@@ -55,6 +55,8 @@ public sealed class MainViewModel : ViewModelBase
     private int _selectedTabIndex;
     private bool _roundOpen;
     private bool _questionSent;
+    private bool _canSendQuestion;
+    private bool _waitOverlayDismissed;
     private DuelNominationDto? _duelNomination;
     private string _answerProgress = "";
     private int _copyFeedbackVersion;
@@ -87,10 +89,15 @@ public sealed class MainViewModel : ViewModelBase
         CloseRoomCommand = new AsyncRelayCommand(_ => CloseRoomAsync(), _ => HasRoom, ShowError);
         KickCommand = new AsyncRelayCommand(p => KickAsync((PlayerItem)p!), p => p is PlayerItem, ShowError);
         SendQuestionCommand = new AsyncRelayCommand(_ => SendQuestionAsync(),
-            _ => HasRoom && _connection.IsConnected && !_roundOpen && QuestionBank.CanSendSelectedQuestion
+            _ => HasRoom && _connection.IsConnected && _canSendQuestion && QuestionBank.CanSendSelectedQuestion
                 && (PhaseControl.Phase != GamePhase.Duel || _duelNomination is not null), ShowError);
         CloseRoundCommand = new AsyncRelayCommand(_ => _connection.CloseRoundAsync(),
             _ => HasRoom && _connection.IsConnected && _roundOpen, ShowError);
+        DismissWaitForAnswersOverlayCommand = new RelayCommand(_ =>
+        {
+            _waitOverlayDismissed = true;
+            Raise(nameof(ShowWaitForAnswersOverlay));
+        });
         QuestionBank.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(QuestionBank.CanSendSelectedQuestion) or nameof(QuestionBank.SelectedQuestion))
@@ -117,17 +124,24 @@ public sealed class MainViewModel : ViewModelBase
         {
             _duelNomination = null;
             _questionSent = true;
+            _waitOverlayDismissed = false;
             Question.Start(q);
             _roundOpen = true;
             AnswerProgress = "";
             PhaseControl.SetRoundOpen(true);
             RefreshRoundCommands();
         });
+        _connection.QuestionSelectionAvailabilityChanged += canSend => OnUi(() =>
+        {
+            _canSendQuestion = canSend;
+            if (canSend) _questionSent = false;
+            RefreshRoundCommands();
+        });
         _connection.RoundClosed += r => OnUi(() =>
         {
             Question.Close(r);
             _roundOpen = false;
-            _questionSent = false;
+            _waitOverlayDismissed = false;
             PhaseControl.RecordRoundClosed(r);
             RefreshRoundCommands();
         });
@@ -136,7 +150,6 @@ public sealed class MainViewModel : ViewModelBase
         _connection.PhaseChanged += phase => OnUi(() =>
         {
             _duelNomination = null;
-            _questionSent = false;
             RoomSettings.SetPhase(phase);
             Map.ApplyPhaseChanged(phase);
             PhaseControl.ApplyPhaseChanged(phase);
@@ -157,6 +170,7 @@ public sealed class MainViewModel : ViewModelBase
         {
             _roundOpen = false;
             _questionSent = false;
+            _waitOverlayDismissed = false;
             RefreshRoundCommands();
             RoomSettings.SetPhase(GamePhase.Results);
             Map.ApplyGameFinished(finished);
@@ -179,17 +193,37 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand KickCommand { get; }
     public ICommand SendQuestionCommand { get; }
     public ICommand CloseRoundCommand { get; }
-    public string AnswerProgress { get => _answerProgress; private set => Set(ref _answerProgress, value); }
+    public ICommand DismissWaitForAnswersOverlayCommand { get; }
+    public string AnswerProgress
+    {
+        get => _answerProgress;
+        private set
+        {
+            if (!Set(ref _answerProgress, value)) return;
+            Raise(nameof(WaitOverlayText));
+        }
+    }
+
+    public bool ShowWaitForAnswersOverlay => (_roundOpen || _questionSent) && !_waitOverlayDismissed;
+    public string WaitOverlayText => _roundOpen
+        ? string.IsNullOrWhiteSpace(AnswerProgress)
+            ? "Wait for answers…"
+            : $"Wait for answers… {AnswerProgress[9..]}"
+        : PhaseControl.Phase == GamePhase.Expansion
+            ? "Wait for the winning player to select a territory…"
+            : "Wait for the players to finish their selection…";
 
     private void RefreshRoundCommands()
     {
         ((AsyncRelayCommand)SendQuestionCommand).RaiseCanExecuteChanged();
         ((AsyncRelayCommand)CloseRoundCommand).RaiseCanExecuteChanged();
         RaiseQuestionSelectionPrompt();
+        Raise(nameof(ShowWaitForAnswersOverlay));
+        Raise(nameof(WaitOverlayText));
     }
 
     public bool ShowQuestionSelectionBanner =>
-        HasRoom && _connection.IsConnected && !_roundOpen
+        HasRoom && _connection.IsConnected && _canSendQuestion
         && (PhaseControl.Phase is GamePhase.Conquest or GamePhase.Expansion
             || PhaseControl.Phase == GamePhase.Duel && _duelNomination is not null)
         && !_questionSent;
@@ -215,8 +249,9 @@ public sealed class MainViewModel : ViewModelBase
             await _connection.SendQuestionAsync(new SendQuestionRequest { QuestionId = selected.Id });
 
         _questionSent = true;
+        _canSendQuestion = false;
         QuestionBank.SelectedQuestion = null;
-        RaiseQuestionSelectionPrompt();
+        RefreshRoundCommands();
     }
     public ICommand CopyRoomCodeCommand { get; }
 
@@ -383,6 +418,8 @@ public sealed class MainViewModel : ViewModelBase
         Question.Reset();
         _roundOpen = false;
         _questionSent = false;
+        _canSendQuestion = false;
+        _waitOverlayDismissed = false;
         _duelNomination = null;
         AnswerProgress = "";
         RoomCode = "";
@@ -398,7 +435,9 @@ public sealed class MainViewModel : ViewModelBase
     {
         Question.ApplyState(state);
         _roundOpen = state.CurrentRound is not null;
-        _questionSent = _roundOpen;
+        _canSendQuestion = state.CanSendQuestion;
+        _questionSent = _roundOpen || state.CurrentPick?.Purpose == PickPurpose.Expansion;
+        _waitOverlayDismissed = false;
         _duelNomination = state.CurrentDuelNomination;
         AnswerProgress = state.AnswerCount is { } count ? $"Answered {count.Answered}/{count.Total}" : "";
         Players.Clear();

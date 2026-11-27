@@ -82,6 +82,8 @@ public sealed record RoomStateDto
 
     public MapDto? Map { get; init; }
     public CurrentRoundDto? CurrentRound { get; init; }
+    /// <summary>Whether the server currently accepts a question from the game master.</summary>
+    public bool CanSendQuestion { get; init; }
     /// <summary>Territory choice in progress (base, conquest claim, expansion or duel target), otherwise null.</summary>
     public CurrentPickDto? CurrentPick { get; init; }
     /// <summary>Pending Duel target awaiting a host question; only populated for the host.</summary>

@@ -9,9 +9,9 @@
 
     <Window.Resources>
         <Storyboard x:Key="PopInAnimation">
-            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
+            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(TransformGroup.Children)[1].(ScaleTransform.ScaleX)"
                              From="1" To="1.12" Duration="0:0:0.08" AutoReverse="True" />
-            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
+            <DoubleAnimation Storyboard.TargetProperty="RenderTransform.(TransformGroup.Children)[1].(ScaleTransform.ScaleY)"
                              From="1" To="1.12" Duration="0:0:0.08" AutoReverse="True" />
         </Storyboard>
 
@@ -20,7 +20,10 @@
             <Setter Property="IsHitTestVisible" Value="False" />
             <Setter Property="RenderTransform">
                 <Setter.Value>
-                    <ScaleTransform ScaleX="1" ScaleY="1" />
+                    <TransformGroup>
+                        <RotateTransform Angle="0" />
+                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                    </TransformGroup>
                 </Setter.Value>
             </Setter>
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
@@ -185,25 +188,18 @@
                                 <StackPanel Grid.Row="0" Margin="0,8,0,0" Visibility="{Binding HasRoom, Converter={StaticResource B2V}}">
                                     <TextBlock Text="Room code" Foreground="Gray" HorizontalAlignment="Center" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                        <TextBlock Text="{Binding RoomCode}" FontSize="64" FontWeight="Bold" FontFamily="Consolas"
+                                        <TextBlock x:Name="RoomCodeText" Text="{Binding RoomCode}" FontSize="64" FontWeight="Bold" FontFamily="Consolas"
                                                    VerticalAlignment="Center">
                                             <TextBlock.RenderTransform>
-                                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                <TransformGroup>
+                                                    <RotateTransform Angle="0" />
+                                                    <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                </TransformGroup>
                                             </TextBlock.RenderTransform>
                                             <TextBlock.RenderTransformOrigin>0.5,0.5</TextBlock.RenderTransformOrigin>
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding HasRoom}" Value="True">
-                                                            <DataTrigger.EnterActions>
-                                                                <BeginStoryboard Storyboard="{StaticResource PopInAnimation}" />
-                                                            </DataTrigger.EnterActions>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
                                         </TextBlock>
                                         <Button Command="{Binding CopyRoomCodeCommand}"
+                                                Click="CopyRoomCode_Click"
                                                 Width="32" Height="32"
                                                 Padding="7"
                                                 Margin="16,0,0,0"
@@ -243,7 +239,10 @@
                                                 <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
                                                 <Setter Property="RenderTransform">
                                                     <Setter.Value>
-                                                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                        <TransformGroup>
+                                                            <RotateTransform Angle="0" />
+                                                            <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                        </TransformGroup>
                                                     </Setter.Value>
                                                 </Setter>
                                                 <Style.Triggers>
@@ -320,7 +319,11 @@
                                 </StackPanel>
                             </Border>
                             <WrapPanel>
-                                <Button  Command="{Binding SendQuestionCommand}" Padding="14,8" Margin="0,0,8,0">
+                                <Button  Command="{Binding SendQuestionCommand}"
+                                         Style="{StaticResource PrimaryActionButton}"
+                                         Padding="14,8"
+                                         Margin="0,0,8,0"
+                                         FontWeight="SemiBold">
                                     <StackPanel Orientation="Horizontal">
                                         <icons:PackIconLucide Kind="Send" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
                                         <TextBlock Text="Send selected question" VerticalAlignment="Center" />
@@ -344,7 +347,6 @@
                                         <TextBlock Text="Map" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
-                                <TextBlock Text="{Binding AnswerProgress}" VerticalAlignment="Center" />
                             </WrapPanel>
                         </DockPanel>
                         <views:QuestionBankView DataContext="{Binding QuestionBank}" Margin="12" />
