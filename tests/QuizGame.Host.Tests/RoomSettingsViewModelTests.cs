@@ -53,6 +53,11 @@ public class RoomSettingsViewModelTests
     [InlineData("questionSeconds", " ")]
     [InlineData("maxRounds", "0")]
     [InlineData("maxRounds", "-3")]
+    [InlineData("baseHealth", "0")]
+    [InlineData("baseHealth", "-1")]
+    [InlineData("defenderBonus", "-1")]
+    [InlineData("defenderBonus", "abc")]
+    [InlineData("drawBonus", "-5")]
     public void TryGetForRoomCreation_InvalidNumericFields_FailWithError(string field, string badValue)
     {
         var vm = new RoomSettingsViewModel(new FakeRoomControlClient());
@@ -66,6 +71,9 @@ public class RoomSettingsViewModelTests
             case "pickTimeout": vm.PickTimeoutSecondsText = badValue; break;
             case "questionSeconds": vm.DefaultQuestionSecondsText = badValue; break;
             case "maxRounds": vm.SuggestedMaxRoundsText = badValue; break;
+            case "baseHealth": vm.BaseHealthText = badValue; break;
+            case "defenderBonus": vm.DefenderBonusText = badValue; break;
+            case "drawBonus": vm.DrawBonusText = badValue; break;
         }
 
         Assert.True(vm.HasUnsavedChanges);
@@ -201,7 +209,10 @@ public class RoomSettingsViewModelTests
             MapPreset = MapPreset.Small,
             TerritoryValue = 200,
             BaseValue = 600,
+            BaseHealth = 4,
             ConquestRounds = 3,
+            DefenderBonus = 150,
+            DrawBonus = 75,
             MinPlayers = 4,
             PickTimeoutSeconds = 30,
             DefaultQuestionSeconds = 45,
@@ -221,7 +232,10 @@ public class RoomSettingsViewModelTests
         Assert.Equal(MapPreset.Small, vm.SelectedMapPreset.Value);
         Assert.Equal("200", vm.TerritoryValueText);
         Assert.Equal("600", vm.BaseValueText);
+        Assert.Equal("4", vm.BaseHealthText);
         Assert.Equal("3", vm.WinnersPerRoundText);
+        Assert.Equal("150", vm.DefenderBonusText);
+        Assert.Equal("75", vm.DrawBonusText);
         Assert.Equal("4", vm.MinPlayersText);
         Assert.Equal("30", vm.PickTimeoutSecondsText);
         Assert.Equal("45", vm.DefaultQuestionSecondsText);
@@ -294,6 +308,20 @@ public class RoomSettingsViewModelTests
         Assert.Equal("2", vm.MinPlayersText);
         Assert.Equal(MapPreset.Medium, vm.SelectedMapPreset.Value);
         Assert.False(vm.IsConnected);
+    }
+
+    [Fact]
+    public void TryGetForRoomCreation_AllowsZeroForDefenderAndDrawBonusesAndCustomBaseHealth()
+    {
+        var vm = new RoomSettingsViewModel(new FakeRoomControlClient());
+        vm.BaseHealthText = "5";
+        vm.DefenderBonusText = "0";
+        vm.DrawBonusText = "0";
+
+        Assert.True(vm.TryGetForRoomCreation(out var settings));
+        Assert.Equal(5, settings.BaseHealth);
+        Assert.Equal(0, settings.DefenderBonus);
+        Assert.Equal(0, settings.DrawBonus);
     }
 }
 

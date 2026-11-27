@@ -1,10 +1,10 @@
 // Map screen: the territory grid. Lets the current player select & confirm (base, conquest claim, expansion)
 // or nominate a duel target, shows base markers, countdown, and the scoreboard.
 // All dynamic text uses textContent (names are untrusted).
-import { PickPurpose } from '../hubNames.js';
+import { GamePhase, PickPurpose, RoundKind } from '../hubNames.js';
 import { createMapPickState } from '../mapPickState.js';
 
-export function createMap({ pick, nominate, playerId }) {
+export function createMap({ pick, nominate, playerId, onScoreChange }) {
   const gridEl = document.getElementById('map-grid');
   const titleEl = document.getElementById('map-title');
   const statusEl = document.getElementById('map-status');
@@ -21,7 +21,9 @@ export function createMap({ pick, nominate, playerId }) {
   let cells = new Map();        // index -> territory
   let players = new Map();      // id -> player summary
   let scoreboard = [];
+  let finalStandings = null;
   let duelNotice = null;
+  let duelTargetIndex = null;
   let timer = null;
   let lastExpired = false;
 
@@ -40,6 +42,22 @@ export function createMap({ pick, nominate, playerId }) {
   });
 
   function colorOf(ownerId) { return players.get(ownerId)?.colorHex ?? '#444'; }
+
+  function notifyMyScore() {
+    if (!onScoreChange) return;
+    const me = playerId();
+    const row = (finalStandings ?? scoreboard).find((s) => s.playerId === me);
+    onScoreChange(row ? row.score : null);
+  }
+
+  function buildRankedScoreboard() {
+    let prevRank = 1;
+    return scoreboard.map((s, i) => {
+      const rank = i > 0 && s.score === scoreboard[i - 1].score ? prevRank : i + 1;
+      prevRank = rank;
+      return { ...s, rank };
+    });
+  }
 
   function renderGrid() {
     if (!map) { gridEl.replaceChildren(); return; }
@@ -72,14 +90,24 @@ export function createMap({ pick, nominate, playerId }) {
         b.addEventListener('click', () => pickState.select(t.index));
       }
       if (isSelected) b.classList.add('selected');
+      if (duelTargetIndex === t.index && !pickable) b.classList.add('duel-target');
       return b;
     });
     gridEl.replaceChildren(...nodes);
   }
 
   function renderScores() {
-    scoreEl.replaceChildren(...scoreboard.map((s) => {
+    const me = playerId();
+    const rows = finalStandings ?? (pickState.state.finished ? buildRankedScoreboard() : scoreboard);
+    scoreEl.replaceChildren(...rows.map((s) => {
       const li = document.createElement('li');
+      if (s.playerId === me) li.classList.add('me');
+      if (s.rank != null) {
+        const rank = document.createElement('span');
+        rank.className = 'rank';
+        rank.textContent = `#${s.rank}`;
+        li.append(rank);
+      }
       const chip = document.createElement('span');
       chip.className = 'chip';
       chip.style.background = colorOf(s.playerId);
@@ -134,7 +162,11 @@ export function createMap({ pick, nominate, playerId }) {
 
     if (finished) {
       titleEl.textContent = 'Game over';
-      statusEl.textContent = 'Final map';
+      const rows = finalStandings ?? buildRankedScoreboard();
+      const mine = rows.find((s) => s.playerId === playerId());
+      statusEl.textContent = mine
+        ? `You finished #${mine.rank} with ${mine.score} pts`
+        : 'Final map';
       statusEl.className = 'muted';
       return;
     }
@@ -264,11 +296,20 @@ export function createMap({ pick, nominate, playerId }) {
     /** From RoomState. */
     setState(state) {
       duelNotice = null;
+      duelTargetIndex = null;
+      finalStandings = null;
       players = new Map(state.players.map((p) => [p.id, p]));
       setMap(state.map ?? null);
       scoreboard = state.scoreboard ?? [];
+      if (!state.playerQuestion && state.currentRound?.kind === RoundKind.Duel && state.currentRound.targetTerritoryIndex != null) {
+        const attacker = players.get(state.currentRound.attackerId)?.name ?? 'Attacker';
+        const defender = players.get(state.currentRound.defenderId)?.name ?? 'Defender';
+        duelNotice = `${attacker} attacks ${defender}. Watch the projector.`;
+        duelTargetIndex = state.currentRound.targetTerritoryIndex;
+      }
       pickState.setState(state);
       renderScores();
+      notifyMyScore();
     },
     /** MapUpdated: only changed cells + scoreboard. */
     update(update) {
@@ -281,47 +322,82 @@ export function createMap({ pick, nominate, playerId }) {
         renderConfirmBar();
       }
       renderScores();
+      notifyMyScore();
+    },
+    updateScores(nextScoreboard) {
+      scoreboard = nextScoreboard ?? [];
+      renderScores();
+      notifyMyScore();
     },
     pickRequested(req) {
       duelNotice = null;
+      duelTargetIndex = null;
       pickState.pickRequested(req);
     },
     pickWaiting(waiting) {
       duelNotice = null;
+      duelTargetIndex = null;
       const picker = waiting?.picker ?? waiting;
       if (picker?.id) players.set(picker.id, picker);
       pickState.pickWaiting(waiting);
     },
     phaseChanged(phase) {
       duelNotice = null;
+      duelTargetIndex = null;
+      if (phase === GamePhase.Results && !finalStandings) {
+        renderScores();
+      }
       pickState.phaseChanged(phase);
     },
     clearPick() {
       duelNotice = null;
+      duelTargetIndex = null;
       pickState.clearPick();
+    },
+    clearDuelTarget() {
+      if (duelNotice === null && duelTargetIndex === null) return;
+      duelNotice = null;
+      duelTargetIndex = null;
+      renderStatus();
+      renderGrid();
     },
     duelAnnounced(data) {
       const attacker = players.get(data.attackerId)?.name ?? 'Attacker';
       const defender = players.get(data.defenderId)?.name ?? 'Defender';
       duelNotice = `${attacker} attacks ${defender}. Watch the projector.`;
+      duelTargetIndex = data.targetTerritoryIndex ?? null;
       pickState.duelAnnounced();
     },
     gameFinished(data) {
       duelNotice = null;
+      duelTargetIndex = null;
+      finalStandings = data.standings ?? null;
+      if (finalStandings) {
+        scoreboard = finalStandings.map((s) => ({
+          playerId: s.playerId,
+          name: s.name,
+          score: s.score,
+          territoryCount: s.territoryCount,
+        }));
+      }
       setMap(data.finalMap);
       pickState.gameFinished();
       renderScores();
+      notifyMyScore();
     },
     get hasMap() { return map !== null; },
     reset() {
       stopTimer();
       duelNotice = null;
+      duelTargetIndex = null;
+      finalStandings = null;
       map = null;
       cells.clear();
       players.clear();
       scoreboard = [];
       pickState.reset();
       renderScores();
+      onScoreChange?.(null);
     },
   };
 }

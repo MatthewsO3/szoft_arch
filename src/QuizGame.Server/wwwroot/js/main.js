@@ -19,7 +19,18 @@ const screens = {
 const header = document.getElementById('header');
 const meChip = document.getElementById('me-chip');
 const meName = document.getElementById('me-name');
+const meScoreEl = document.getElementById('me-score');
 const connEl = document.getElementById('conn');
+
+function setMyScore(score) {
+  if (score === null || score === undefined) {
+    meScoreEl.textContent = '';
+    meScoreEl.hidden = true;
+  } else {
+    meScoreEl.textContent = `${score} pts`;
+    meScoreEl.hidden = false;
+  }
+}
 
 const lobby = createLobby();
 let hub = null;
@@ -33,7 +44,12 @@ const question = createQuestion({
   playerId: () => session?.player.id,
 });
 
-const map = createMap({ pick: (i) => hub.pickTerritory(i), nominate: (i) => hub.nominateTarget(i), playerId: () => session?.player.id });
+const map = createMap({
+  pick: (i) => hub.pickTerritory(i),
+  nominate: (i) => hub.nominateTarget(i),
+  playerId: () => session?.player.id,
+  onScoreChange: setMyScore,
+});
 
 map.setClock((deadline) => clock.remaining(deadline));
 
@@ -103,6 +119,7 @@ async function enterRoom(response, roomCode) {
 
   meChip.style.background = response.player.colorHex;
   meName.textContent = response.player.name;
+  setMyScore(null);
   lobby.setRoom(roomCode, response.player.id);
   show('lobby');
   await connect();
@@ -123,10 +140,11 @@ async function connect() {
     PhaseChanged: (phase) => map.phaseChanged(phase),
     DuelAnnounced: (data) => { map.duelAnnounced(data); show('map'); },
     MapUpdated: (data) => { map.update(data); },
+    ScoreboardUpdated: (scores) => { map.updateScores(scores); },
     PickRequested: (req) => { map.pickRequested(req); show('map'); },
     PickWaiting: (waiting) => { map.pickWaiting(waiting); show('map'); },
     GameFinished: (data) => { map.gameFinished(data); show('map'); },
-    RoundClosed: (data) => { if (question.close(data)) show('question'); },
+    RoundClosed: (data) => { map.clearDuelTarget(); if (question.close(data)) show('question'); },
     PlayerJoined: (player) => lobby.upsert(player),
     PlayerConnectionChanged: (player) => lobby.upsert(player),
     PlayerLeft: (player) => lobby.remove(player.id),

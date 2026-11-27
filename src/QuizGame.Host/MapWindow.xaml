@@ -64,9 +64,10 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="110" Height="110" Margin="3" CornerRadius="10" Background="{Binding Fill}">
+                        <Border Width="110" Height="110" Margin="3" CornerRadius="10" Background="{Binding Fill}"
+                                BorderBrush="{Binding CellBorderBrush}" BorderThickness="{Binding CellBorderThickness}">
                             <Grid>
-                                <TextBlock Text="{Binding Marker}" Foreground="{Binding TextBrush}" FontSize="30"
+                                <TextBlock Text="{Binding Marker}" Foreground="{Binding TextBrush}" FontSize="26" FontWeight="Bold"
                                            HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,6,0,0" />
                                 <TextBlock Text="{Binding Caption}" Foreground="{Binding TextBrush}" FontSize="18" FontWeight="SemiBold"
                                            TextTrimming="CharacterEllipsis" TextAlignment="Center"

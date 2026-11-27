@@ -499,7 +499,6 @@ Everyone writes tests for their own part and reviews at least one other member's
 **M4 – Conquest and battles (~1 week)**
 - A: Multiple-choice grabs with adjacency rule, battle flow (nominate → confirm → duel), scoring.
 - C/D: battle UI on host, phone and projectors, scoreboard.
-- KNOWN ISSUE: TODO TO FIX IT: An unexpected error occured invoking SendQuestion on the server. HubException: PhaseNotComplete - we couldnt test the dual phase / not visible phase on the UI? 
 - **Exit criterion**: a full game to Results with correct scores.
 
 **M5 – Robustness and polish (~1 week)**

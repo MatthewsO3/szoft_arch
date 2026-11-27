@@ -63,6 +63,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Grid.Column="0">
@@ -138,6 +139,39 @@
                                               Text="Duel ends automatically at this round limit or when only one player holds a base, whichever comes first." />
                     </StackPanel>
                     <TextBox Text="{Binding DuelRoundsText, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding CanEdit}"
+                             Style="{StaticResource SettingInputStyle}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="3" Grid.Column="2">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Base health" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Base health"
+                                              Text="Hit points of each base; an attacker must win this many Duel rounds against a base to capture it." />
+                    </StackPanel>
+                    <TextBox Text="{Binding BaseHealthText, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding CanEdit}"
+                             Style="{StaticResource SettingInputStyle}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="4" Grid.Column="0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Defender bonus" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Defender bonus"
+                                              Text="Bonus points awarded to the defender for answering correctly alone in a Duel." />
+                    </StackPanel>
+                    <TextBox Text="{Binding DefenderBonusText, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding CanEdit}"
+                             Style="{StaticResource SettingInputStyle}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="4" Grid.Column="2">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Draw bonus" Style="{StaticResource FieldLabelStyle}" />
+                        <controls:HelpTooltip AutomationProperties.Name="About Draw bonus"
+                                              Text="Bonus points awarded to both players when both answer correctly in a Duel." />
+                    </StackPanel>
+                    <TextBox Text="{Binding DrawBonusText, UpdateSourceTrigger=PropertyChanged}"
                              IsEnabled="{Binding CanEdit}"
                              Style="{StaticResource SettingInputStyle}" />
                 </StackPanel>

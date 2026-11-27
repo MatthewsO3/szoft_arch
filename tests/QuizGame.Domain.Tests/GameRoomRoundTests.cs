@@ -273,6 +273,21 @@ public class GameRoomRoundTests
         Assert.Null(room.StartConquestClaims(Make.T0)); // no more Conquest rounds
     }
 
+    [Fact]
+    public void Conquest_prevents_two_players_from_claiming_the_same_tile()
+    {
+        var (room, _, _, _) = Room();
+        room.StartConquestClaims(Make.T0);
+
+        var firstPick = room.CurrentPickView()!;
+        var claimed = firstPick.ValidTerritoryIndices[0];
+        Assert.True(room.TryPick(firstPick.Picker.Id, claimed, Make.T0.AddSeconds(1)).Ok);
+
+        var secondPick = room.CurrentPickView()!;
+        Assert.DoesNotContain(claimed, secondPick.ValidTerritoryIndices);
+        Assert.Equal(PickError.InvalidPick, room.TryPick(secondPick.Picker.Id, claimed, Make.T0.AddSeconds(2)).Error);
+    }
+
     // ---- Expansion ----
 
     [Fact]
@@ -456,6 +471,167 @@ public class GameRoomRoundTests
             else
                 Assert.Equal(attacker, after.OwnerPlayerId); // captured on the last hit
         }
+    }
+
+    [Fact]
+    public void Duel_capturing_last_base_in_three_hits_frees_all_defender_tiles_and_updates_scores()
+    {
+        var settings = new RoomSettings
+        {
+            MapPreset = MapPreset.Small,
+            BaseHealth = 3,
+            BaseValue = 300,
+            TerritoryValue = 100,
+            DuelRounds = 20,
+            DisallowAdjacentBases = false,
+        };
+        var room = new GameRoom("123456", Guid.NewGuid(), settings, 30, Make.T0) { PickRandom = new Random(1) };
+        foreach (var name in new[] { "Anna", "Bela", "Cili" })
+        {
+            var p = room.AddPlayer(name, Make.T0).Player!;
+            room.SetConnected(p.Id, true);
+        }
+        Game.StartGame(room);
+
+        var order = room.TurnOrder;
+        var attacker = order[0];
+        var defender = order[1];
+        var third = order[2];
+
+        // Place bases adjacent on row 0: attacker=0, defender=1, third=2.
+        Assert.True(room.TryPick(attacker, 0, Make.T0).Ok);
+        Assert.True(room.TryPick(defender, 1, Make.T0).Ok);
+        Assert.True(room.TryPick(third, 2, Make.T0).Ok);
+        Assert.True(room.TryAdvancePhase(GamePhase.Conquest, Make.T0).Ok);
+        Assert.True(room.TryAdvancePhase(GamePhase.Expansion, Make.T0).Ok);
+
+        // Give defender tiles 6, 11, 16; give third all other remaining free tiles via Expansion rounds.
+        void ClaimInExpansion(Guid winnerId, int tileIndex)
+        {
+            var q = Est(100m);
+            var round = room.TryStartExpansionRound(q, Make.T0).Round!;
+            foreach (var pid in round.ParticipantIds)
+                room.TrySubmitAnswer(pid, Num(round, pid == winnerId ? 100m : 10m), Make.T0, Grace);
+            var closed = room.CloseRound(round.RoundId, Make.T0)!;
+            Assert.Equal(winnerId, closed.ExpansionPick!.Picker.Id);
+            Assert.True(room.TryPick(winnerId, tileIndex, Make.T0).Ok);
+        }
+
+        foreach (var tile in new[] { 6, 11, 16 }) ClaimInExpansion(defender, tile);
+        foreach (var free in room.GetMap()!.Territories.Where(t => t.OwnerPlayerId is null).Select(t => t.Index).ToList())
+            ClaimInExpansion(third, free);
+
+        Assert.True(room.TryAdvancePhase(GamePhase.Duel, Make.T0).Ok);
+
+        // Hit defender's base (1) three times whenever attacker is active; other turns end with neither right.
+        var hits = 0;
+        while (hits < 3)
+        {
+            var active = room.ActivePlayer()!.Value;
+            if (active == attacker)
+            {
+                Assert.True(room.TryNominateTarget(attacker, 1).Ok);
+                var round = room.TryStartDuelRound(Mc(), Make.T0).Round!;
+                room.TrySubmitAnswer(attacker, Opt(round, 'B'), Make.T0, Grace);
+                room.TrySubmitAnswer(defender, Opt(round, 'A'), Make.T0, Grace);
+                var closed = room.CloseRound(round.RoundId, Make.T0)!;
+                hits++;
+
+                Assert.Equal(new[] { attacker }, closed.Result.WinnerPlayerIds.ToArray());
+
+                var baseTile = room.GetMap()!.Territories.First(t => t.Index == 1);
+                if (hits < 3)
+                {
+                    Assert.Equal(defender, baseTile.OwnerPlayerId);
+                    Assert.True(baseTile.IsBase);
+                    Assert.Equal(3 - hits, baseTile.Health);
+                }
+                else
+                {
+                    Assert.Equal(attacker, baseTile.OwnerPlayerId);
+                    Assert.False(baseTile.IsBase);
+                    Assert.Equal(settings.TerritoryValue, baseTile.Value);
+                    Assert.Equal(1, baseTile.Health);
+                }
+            }
+            else
+            {
+                var target = room.StartDuelTargetPick(Make.T0)!.ValidTerritoryIndices[0];
+                Assert.True(room.TryNominateTarget(active, target).Ok);
+                var round = room.TryStartDuelRound(Mc(), Make.T0).Round!;
+                foreach (var pid in round.ParticipantIds)
+                    room.TrySubmitAnswer(pid, Opt(round, 'A'), Make.T0, Grace);
+                room.CloseRound(round.RoundId, Make.T0);
+            }
+        }
+
+        // Defender lost their last base -> all defender tiles (6, 11, 16) are freed and score drops to 0.
+        var afterMap = room.GetMap()!;
+        Assert.DoesNotContain(afterMap.Territories, t => t.OwnerPlayerId == defender);
+        foreach (var freedIdx in new[] { 6, 11, 16 })
+        {
+            var freed = afterMap.Territories.First(t => t.Index == freedIdx);
+            Assert.Null(freed.OwnerPlayerId);
+            Assert.False(freed.IsBase);
+        }
+        Assert.Equal(0, room.Scoreboard().First(s => s.PlayerId == defender).Score);
+        Assert.Equal(settings.BaseValue + settings.TerritoryValue, room.Scoreboard().First(s => s.PlayerId == attacker).Score);
+    }
+
+    [Fact]
+    public void Duel_ends_automatically_when_losing_last_base_leaves_no_adjacent_enemies()
+    {
+        var settings = new RoomSettings
+        {
+            MapPreset = MapPreset.Small, // 5x5
+            BaseHealth = 1,
+            DuelRounds = 20,
+            DisallowAdjacentBases = false,
+        };
+        var room = new GameRoom("123456", Guid.NewGuid(), settings, 30, Make.T0) { PickRandom = new Random(1) };
+        foreach (var name in new[] { "Anna", "Bela", "Cili" })
+        {
+            var p = room.AddPlayer(name, Make.T0).Player!;
+            room.SetConnected(p.Id, true);
+        }
+        Game.StartGame(room);
+
+        var order = room.TurnOrder;
+        var attacker = order[0];
+        var eliminated = order[1];
+        var isolated = order[2];
+
+        // attacker=0, eliminated=1, isolated=24 (bottom-right corner).
+        Assert.True(room.TryPick(attacker, 0, Make.T0).Ok);
+        Assert.True(room.TryPick(eliminated, 1, Make.T0).Ok);
+        Assert.True(room.TryPick(isolated, 24, Make.T0).Ok);
+        Assert.True(room.TryAdvancePhase(GamePhase.Conquest, Make.T0).Ok);
+        Assert.True(room.TryAdvancePhase(GamePhase.Expansion, Make.T0).Ok);
+
+        // Give eliminated every free tile in rows 0-3 except 0,1 so attacker (0) and isolated (24) do not touch.
+        var remaining = room.GetMap()!.Territories.Where(t => t.OwnerPlayerId is null).Select(t => t.Index).ToList();
+        foreach (var tile in remaining)
+        {
+            var winner = tile == 23 ? isolated : eliminated;
+            var round = room.TryStartExpansionRound(Est(100m), Make.T0).Round!;
+            foreach (var pid in round.ParticipantIds)
+                room.TrySubmitAnswer(pid, Num(round, pid == winner ? 100m : 10m), Make.T0, Grace);
+            room.CloseRound(round.RoundId, Make.T0);
+            Assert.True(room.TryPick(winner, tile, Make.T0).Ok);
+        }
+
+        Assert.True(room.TryAdvancePhase(GamePhase.Duel, Make.T0).Ok);
+        Assert.Null(room.NextAutomaticPhase());
+
+        // Attacker captures eliminated's 1-HP base (1), freeing all separating tiles.
+        Assert.True(room.TryNominateTarget(attacker, 1).Ok);
+        var duel = room.TryStartDuelRound(Mc(), Make.T0).Round!;
+        room.TrySubmitAnswer(attacker, Opt(duel, 'B'), Make.T0, Grace);
+        room.TrySubmitAnswer(eliminated, Opt(duel, 'A'), Make.T0, Grace);
+        room.CloseRound(duel.RoundId, Make.T0);
+
+        Assert.False(room.OneBaseHolderRemains()); // attacker & isolated both have bases
+        Assert.Equal(GamePhase.Results, room.NextAutomaticPhase()); // but neither touches an enemy tile
     }
 
     // Duel helpers computing adjacency from the DTO (the GameMap ctor is internal).

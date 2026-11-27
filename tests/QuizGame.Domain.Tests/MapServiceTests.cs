@@ -140,6 +140,47 @@ public class MapServiceTests
         Assert.Equal(0, MapService.ScoreOf(map, Guid.NewGuid()));
     }
 
+    [Fact]
+    public void Valid_adjacent_picks_prefer_adjacent_free_tiles_and_fall_back_to_all_free_tiles()
+    {
+        var map = MapService.Create(new RoomSettings { MapPreset = MapPreset.Small }, 2); // 5×5
+        var anna = Guid.NewGuid();
+        var bela = Guid.NewGuid();
+
+        // Player with no owned tiles gets all free tiles.
+        Assert.Equal(25, MapService.ValidAdjacentPicks(map, anna).Count);
+
+        // Anna owns corner (0) -> free neighbours are 1 and 5.
+        map.Get(0)!.OwnerId = anna;
+        Assert.Equal(new[] { 1, 5 }, MapService.ValidAdjacentPicks(map, anna).ToArray());
+
+        // Block Anna's free neighbours with Bela -> falls back to remaining free tiles.
+        map.Get(1)!.OwnerId = bela;
+        map.Get(5)!.OwnerId = bela;
+        var fallback = MapService.ValidAdjacentPicks(map, anna);
+        Assert.Equal(22, fallback.Count);
+        Assert.DoesNotContain(0, fallback);
+        Assert.DoesNotContain(1, fallback);
+        Assert.DoesNotContain(5, fallback);
+    }
+
+    [Fact]
+    public void Valid_duel_targets_are_only_adjacent_enemy_territories()
+    {
+        var map = MapService.Create(new RoomSettings { MapPreset = MapPreset.Small }, 2); // 5×5
+        var anna = Guid.NewGuid();
+        var bela = Guid.NewGuid();
+
+        map.Get(0)!.OwnerId = anna;
+        map.Get(1)!.OwnerId = anna;  // own neighbour
+        map.Get(5)!.OwnerId = bela;  // adjacent enemy
+        map.Get(24)!.OwnerId = bela; // non-adjacent enemy
+        // 6 is free neighbour -> not a duel target
+
+        var targets = MapService.ValidDuelTargets(map, anna);
+        Assert.Equal(new[] { 5 }, targets.ToArray());
+    }
+
     private static void Own(GameMap map, params int[] indices)
     {
         foreach (var i in indices)

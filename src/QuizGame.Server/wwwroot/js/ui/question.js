@@ -90,7 +90,21 @@ export function createQuestion({ clock, send, recover, playerId }) {
       ranking.replaceChildren();
       for (const row of data.ranking) {
         const item = document.createElement('li');
-        item.textContent = `${row.rank}. ${row.name}${row.distance != null ? ` — distance ${row.distance}` : row.elapsedMs != null ? ` — ${row.elapsedMs} ms` : ''}`;
+        let detail = '';
+        if (row.distance != null) {
+          detail = ` — distance ${row.distance}`;
+        } else {
+          if (row.isCorrect === true) detail = ` — ✓ Correct${row.elapsedMs != null ? ` (${row.elapsedMs} ms)` : ''}`;
+          else if (row.isCorrect === false) detail = ' — ✗ Incorrect';
+          else detail = ' — no answer';
+          if (row.wonTerritoryIndex != null) {
+            detail += data.kind === RoundKind.Duel
+              ? ` · Attack landed (#${row.wonTerritoryIndex + 1})`
+              : ` · Won tile #${row.wonTerritoryIndex + 1}`;
+          }
+          if (row.bonusAwarded > 0) detail += ` · +${row.bonusAwarded} bonus`;
+        }
+        item.textContent = `${row.rank}. ${row.name}${detail}`;
         ranking.append(item);
       }
       return true;

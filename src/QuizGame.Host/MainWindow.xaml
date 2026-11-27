@@ -326,7 +326,7 @@
                                          FontWeight="SemiBold">
                                     <StackPanel Orientation="Horizontal">
                                         <icons:PackIconLucide Kind="Send" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                        <TextBlock Text="Send selected question" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding SendQuestionButtonText, Mode=OneWay}" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
                                 <Button  Command="{Binding CloseRoundCommand}" Padding="14,8" Margin="0,0,8,0">
@@ -349,6 +349,28 @@
                                 </Button>
                             </WrapPanel>
                         </DockPanel>
+                        <Border DockPanel.Dock="Top"
+                                Background="#FEF2F2"
+                                BorderBrush="#EF4444"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="12,8"
+                                Margin="12,0,12,0"
+                                Visibility="{Binding HasDuelNomination, Converter={StaticResource B2V}}">
+                            <StackPanel Orientation="Horizontal">
+                                <icons:PackIconLucide Kind="Info"
+                                                       Width="16"
+                                                       Height="16"
+                                                       Foreground="#991B1B"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0" />
+                                <TextBlock Text="{Binding DuelNominationText, Mode=OneWay}"
+                                           Foreground="#991B1B"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
                         <views:QuestionBankView DataContext="{Binding QuestionBank}" Margin="12" />
                     </DockPanel>
                 </TabItem>
