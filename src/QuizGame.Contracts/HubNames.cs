@@ -39,6 +39,7 @@ public static class HubNames
         public const string PhaseChanged = "PhaseChanged";
         public const string MapUpdated = "MapUpdated";
         public const string QuestionStarted = "QuestionStarted";
+        public const string QuestionSelectionAvailabilityChanged = "QuestionSelectionAvailabilityChanged";
         public const string DuelAnnounced = "DuelAnnounced";
         public const string DuelNominated = "DuelNominated";
         public const string AnswerCountChanged = "AnswerCountChanged";

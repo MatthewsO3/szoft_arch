@@ -19,6 +19,7 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
     public event Action<ErrorDto>? ErrorReceived;
     public event Action<string>? StatusChanged;
     public event Action<QuestionForHost>? QuestionStarted;
+    public event Action<bool>? QuestionSelectionAvailabilityChanged;
     public event Action<RoundClosedDto>? RoundClosed;
     public event Action<AnswerCount>? AnswerCountChanged;
     public event Action<GamePhase>? PhaseChanged;
@@ -46,6 +47,8 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
         hub.On(HubNames.Events.RoomClosed, () => RoomClosed?.Invoke());
         hub.On<ErrorDto>(HubNames.Events.Error, e => ErrorReceived?.Invoke(e));
         hub.On<QuestionForHost>(HubNames.Events.QuestionStarted, q => QuestionStarted?.Invoke(q));
+        hub.On<bool>(HubNames.Events.QuestionSelectionAvailabilityChanged,
+            canSend => QuestionSelectionAvailabilityChanged?.Invoke(canSend));
         hub.On<RoundClosedDto>(HubNames.Events.RoundClosed, r => RoundClosed?.Invoke(r));
         hub.On<AnswerCount>(HubNames.Events.AnswerCountChanged, c => AnswerCountChanged?.Invoke(c));
         hub.On<GamePhase>(HubNames.Events.PhaseChanged, phase => PhaseChanged?.Invoke(phase));
