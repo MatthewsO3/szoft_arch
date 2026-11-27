@@ -26,60 +26,6 @@
             <Setter Property="FontSize" Value="12" />
         </Style>
 
-        <Style x:Key="PhaseButtonBase" TargetType="Button">
-            <Style.Triggers>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#E5E7EB" />
-                    <Setter Property="BorderBrush" Value="#D1D5DB" />
-                    <Setter Property="Foreground" Value="#9CA3AF" />
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="StartGameButton" TargetType="Button" BasedOn="{StaticResource PhaseButtonBase}">
-            <Setter Property="Background" Value="#16A34A" />
-            <Setter Property="BorderBrush" Value="#15803D" />
-            <Setter Property="Foreground" Value="White" />
-            <Style.Triggers>
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
-                        <Condition Binding="{Binding IsEnabled, RelativeSource={RelativeSource Self}}" Value="True" />
-                    </MultiDataTrigger.Conditions>
-                    <Setter Property="Background" Value="#15803D" />
-                </MultiDataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="NextPhaseButton" TargetType="Button" BasedOn="{StaticResource PhaseButtonBase}">
-            <Setter Property="Background" Value="#FACC15" />
-            <Setter Property="BorderBrush" Value="#EAB308" />
-            <Setter Property="Foreground" Value="#713F12" />
-            <Style.Triggers>
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
-                        <Condition Binding="{Binding IsEnabled, RelativeSource={RelativeSource Self}}" Value="True" />
-                    </MultiDataTrigger.Conditions>
-                    <Setter Property="Background" Value="#EAB308" />
-                </MultiDataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="EndGameButton" TargetType="Button" BasedOn="{StaticResource PhaseButtonBase}">
-            <Setter Property="Background" Value="#DC2626" />
-            <Setter Property="BorderBrush" Value="#B91C1C" />
-            <Setter Property="Foreground" Value="White" />
-            <Style.Triggers>
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
-                        <Condition Binding="{Binding IsEnabled, RelativeSource={RelativeSource Self}}" Value="True" />
-                    </MultiDataTrigger.Conditions>
-                    <Setter Property="Background" Value="#B91C1C" />
-                </MultiDataTrigger>
-            </Style.Triggers>
-        </Style>
     </UserControl.Resources>
 
     <Border Background="#F9FAFB"
@@ -104,7 +50,6 @@
                     </Button>
                     <Button
                             Command="{Binding NextPhaseCommand}"
-                            Style="{StaticResource NextPhaseButton}"
                             Padding="12,6"
                             Margin="0,0,8,0"
                             ToolTip="Advance to the next phase when no round or territory pick is pending">
@@ -132,8 +77,8 @@
                             <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsLobbyCompleted}" Value="True">
-                                        <Setter Property="Background" Value="#DCFCE7" />
-                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                        <Setter Property="Background" Value="#EFF6FF" />
+                                        <Setter Property="BorderBrush" Value="#BFDBFE" />
                                     </DataTrigger>
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
@@ -151,7 +96,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsLobbyCompleted}" Value="True">
-                                            <Setter Property="Foreground" Value="#166534" />
+                                            <Setter Property="Foreground" Value="#1E40AF" />
                                         </DataTrigger>
                                         <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
@@ -175,8 +120,8 @@
                             <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsBaseSelectionCompleted}" Value="True">
-                                        <Setter Property="Background" Value="#DCFCE7" />
-                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                        <Setter Property="Background" Value="#EFF6FF" />
+                                        <Setter Property="BorderBrush" Value="#BFDBFE" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding IsBaseSelection}" Value="True">
                                         <Setter Property="Background" Value="#2563EB" />
@@ -190,7 +135,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsBaseSelectionCompleted}" Value="True">
-                                            <Setter Property="Foreground" Value="#166534" />
+                                            <Setter Property="Foreground" Value="#1E40AF" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsBaseSelection}" Value="True">
                                             <Setter Property="Foreground" Value="White" />
@@ -210,8 +155,8 @@
                             <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsConquestCompleted}" Value="True">
-                                        <Setter Property="Background" Value="#DCFCE7" />
-                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                        <Setter Property="Background" Value="#EFF6FF" />
+                                        <Setter Property="BorderBrush" Value="#BFDBFE" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding IsConquest}" Value="True">
                                         <Setter Property="Background" Value="#2563EB" />
@@ -225,7 +170,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsConquestCompleted}" Value="True">
-                                            <Setter Property="Foreground" Value="#166534" />
+                                            <Setter Property="Foreground" Value="#1E40AF" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsConquest}" Value="True">
                                             <Setter Property="Foreground" Value="White" />
@@ -245,8 +190,8 @@
                             <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsExpansionCompleted}" Value="True">
-                                        <Setter Property="Background" Value="#DCFCE7" />
-                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                        <Setter Property="Background" Value="#EFF6FF" />
+                                        <Setter Property="BorderBrush" Value="#BFDBFE" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding IsExpansion}" Value="True">
                                         <Setter Property="Background" Value="#2563EB" />
@@ -260,7 +205,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsExpansionCompleted}" Value="True">
-                                            <Setter Property="Foreground" Value="#166534" />
+                                            <Setter Property="Foreground" Value="#1E40AF" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsExpansion}" Value="True">
                                             <Setter Property="Foreground" Value="White" />
@@ -280,8 +225,8 @@
                             <Style TargetType="Border" BasedOn="{StaticResource StepPillBase}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsDuelCompleted}" Value="True">
-                                        <Setter Property="Background" Value="#DCFCE7" />
-                                        <Setter Property="BorderBrush" Value="#86EFAC" />
+                                        <Setter Property="Background" Value="#EFF6FF" />
+                                        <Setter Property="BorderBrush" Value="#BFDBFE" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding IsDuel}" Value="True">
                                         <Setter Property="Background" Value="#2563EB" />
@@ -295,7 +240,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StepTextBase}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsDuelCompleted}" Value="True">
-                                            <Setter Property="Foreground" Value="#166534" />
+                                            <Setter Property="Foreground" Value="#1E40AF" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsDuel}" Value="True">
                                             <Setter Property="Foreground" Value="White" />
@@ -337,11 +282,25 @@
                 </WrapPanel>
             </DockPanel>
 
-            <TextBlock Text="{Binding StatusGuidance, Mode=OneWay}"
-                       Foreground="#4B5563"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Margin="0,8,0,0" />
+            <Border Background="#F8FAFC"
+                    BorderBrush="#E2E8F0"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="9,6"
+                    Margin="0,8,0,0">
+                <DockPanel>
+                    <icons:PackIconLucide Kind="Info"
+                                           Width="16"
+                                           Height="16"
+                                           Foreground="#2563EB"
+                                           VerticalAlignment="Top"
+                                           Margin="0,1,8,0" />
+                    <TextBlock Text="{Binding StatusGuidance, Mode=OneWay}"
+                               Foreground="#4B5563"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </DockPanel>
+            </Border>
 
             <Border Background="#FEF3C7"
                     BorderBrush="#F59E0B"

@@ -113,6 +113,8 @@ public sealed class PhaseCoordinator(
         // Duel begins with the active player choosing an adjacent enemy territory.
         if (room.Phase == GamePhase.Duel && room.StartDuelTargetPick(time.GetUtcNow()) is { } duelPick)
             await PublishPickAsync(room, duelPick);
+
+        await PublishQuestionAvailabilityCoreAsync(room);
     }
 
     public async Task PublishDuelNominationCoreAsync(GameRoom room, DuelNomination nomination)
@@ -121,7 +123,12 @@ public sealed class PhaseCoordinator(
         await hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
             HubNames.Events.DuelNominated,
             new DuelNominationDto(nomination.AttackerId, nomination.DefenderId, nomination.TargetTerritoryIndex));
+        await PublishQuestionAvailabilityCoreAsync(room);
     }
+
+    public Task PublishQuestionAvailabilityCoreAsync(GameRoom room) =>
+        hub.Clients.Group(GroupNames.Gm(room.Code)).SendAsync(
+            HubNames.Events.QuestionSelectionAvailabilityChanged, room.CanSendQuestion());
 
     public async Task SendPickStateCoreAsync(GameRoom room, IClientProxy caller, Guid? playerId)
     {

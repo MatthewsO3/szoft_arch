@@ -169,6 +169,7 @@ public sealed partial class GameRoom
                 RoundsTotal = total,
                 Map = _map?.ToDto(),
                 CurrentRound = _round?.ToCurrentDto(),
+                CanSendQuestion = CanSendQuestion(),
                 CurrentPick = CurrentPickDtoFor(playerId),
                 CurrentDuelNomination = forHost && _nomination is { } nomination
                     ? new DuelNominationDto(nomination.AttackerId, nomination.DefenderId, nomination.TargetTerritoryIndex)

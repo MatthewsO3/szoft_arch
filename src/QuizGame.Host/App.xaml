@@ -4,5 +4,113 @@
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <BooleanToVisibilityConverter x:Key="B2V" />
+
+        <Storyboard x:Key="StartButtonWiggleAnimation">
+            <DoubleAnimationUsingKeyFrames
+                    Storyboard.TargetProperty="RenderTransform.(TransformGroup.Children)[0].(RotateTransform.Angle)"
+                    BeginTime="0:0:1"
+                    RepeatBehavior="Forever">
+                <LinearDoubleKeyFrame Value="0" KeyTime="0:0:0" />
+                <LinearDoubleKeyFrame Value="4" KeyTime="0:0:0.08" />
+                <LinearDoubleKeyFrame Value="-4" KeyTime="0:0:0.16" />
+                <LinearDoubleKeyFrame Value="0" KeyTime="0:0:0.24" />
+                <LinearDoubleKeyFrame Value="0" KeyTime="0:0:3" />
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+
+        <Style x:Key="PhaseButtonBase" TargetType="Button">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              ContentStringFormat="{TemplateBinding ContentStringFormat}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#F7F7F7" />
+                    <Setter Property="BorderBrush" Value="#A6A6A6" />
+                    <Setter Property="Foreground" Value="#808080" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PrimaryActionButton" TargetType="Button" BasedOn="{StaticResource PhaseButtonBase}">
+            <Setter Property="Background" Value="#2563EB" />
+            <Setter Property="BorderBrush" Value="#1D4ED8" />
+            <Setter Property="Foreground" Value="White" />
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                        <Condition Binding="{Binding IsEnabled, RelativeSource={RelativeSource Self}}" Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="#1D4ED8" />
+                </MultiDataTrigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#F7F7F7" />
+                    <Setter Property="BorderBrush" Value="#A6A6A6" />
+                    <Setter Property="Foreground" Value="#808080" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="StartGameButton" TargetType="Button" BasedOn="{StaticResource PrimaryActionButton}">
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <TransformGroup>
+                        <RotateTransform Angle="0" />
+                    </TransformGroup>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="True">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard x:Name="StartGameWiggle"
+                                         Storyboard="{StaticResource StartButtonWiggleAnimation}" />
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <RemoveStoryboard BeginStoryboardName="StartGameWiggle" />
+                    </Trigger.ExitActions>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="EndGameButton" TargetType="Button" BasedOn="{StaticResource PhaseButtonBase}">
+            <Setter Property="Background" Value="#DC2626" />
+            <Setter Property="BorderBrush" Value="#B91C1C" />
+            <Setter Property="Foreground" Value="White" />
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                        <Condition Binding="{Binding IsEnabled, RelativeSource={RelativeSource Self}}" Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="#B91C1C" />
+                </MultiDataTrigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#F7F7F7" />
+                    <Setter Property="BorderBrush" Value="#A6A6A6" />
+                    <Setter Property="Foreground" Value="#808080" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Application.Resources>
 </Application>

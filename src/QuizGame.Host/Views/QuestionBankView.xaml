@@ -212,6 +212,33 @@
                     IsHitTestVisible="False">
                 <TextBlock Text="Loading…" Foreground="#374151" FontSize="12" />
             </Border>
+
+            <Border Grid.Row="1"
+                    Panel.ZIndex="10"
+                    Visibility="{Binding DataContext.ShowWaitForAnswersOverlay, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource B2V}}"
+                    Background="#E6FFFFFF"
+                    BorderBrush="#D1D5DB"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Grid>
+                    <Button HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Command="{Binding DataContext.DismissWaitForAnswersOverlayCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Width="28"
+                            Height="28"
+                            Padding="5"
+                            Margin="8"
+                            ToolTip="Show questions for editing">
+                        <icons:PackIconLucide Kind="X" Width="16" Height="16" />
+                    </Button>
+                    <TextBlock Text="{Binding DataContext.WaitOverlayText, RelativeSource={RelativeSource AncestorType=Window}}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="#374151"
+                               FontSize="20"
+                               FontWeight="SemiBold" />
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- Footer: summary, errors, pagination -->
