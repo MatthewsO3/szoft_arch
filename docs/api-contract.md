@@ -214,7 +214,7 @@ Initial set; extend as needed and keep in sync with the client:
   are sorted by score, then territory count, then turn position, then join order.
 - **Base selection:** in turn order each player is asked `PickRequested { ValidTerritoryIndices, PickDeadlineUtc, Purpose = Base }`;
   everybody else gets `PickWaiting(PickWaitingDto)` carrying picker, deadline, and purpose. The picker answers `PickTerritory(index)` (errors `NotYourPick` / `InvalidPick`). Valid
-  cells are all free tiles, or with `DisallowAdjacentBases` those touching no base (dropped if that leaves nothing). Each assignment
+  cells are all free tiles, or with `DisallowAdjacentBases` (default `true`) those touching no base (dropped if that leaves nothing). Each assignment
   is announced with `MapUpdated` (`IsBase = true`, `Value = BaseValue`, `Health = BaseHealth`).
 - **Timeout:** after `PickTimeoutSeconds` the server assigns a random valid territory (also for offline players) and moves on;
   a pick that arrives afterwards gets `NotYourPick`.
