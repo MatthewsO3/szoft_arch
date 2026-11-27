@@ -131,7 +131,10 @@ public class PhaseControlViewModelTests
         vm.SetConnectionState(true);
         vm.ApplyPhaseChanged(GamePhase.Conquest);
 
-        vm.ApplyPickWaiting(new PlayerSummary { Id = Guid.NewGuid(), Name = "Anna" });
+        vm.ApplyPickWaiting(new PickWaitingDto(
+            new PlayerSummary { Id = Guid.NewGuid(), Name = "Anna" },
+            DateTimeOffset.UtcNow.AddSeconds(20),
+            PickPurpose.ConquestClaim));
         Assert.Contains("Anna is picking", vm.StatusGuidance);
         Assert.False(vm.NextPhaseCommand.CanExecute(null));
 
@@ -139,13 +142,19 @@ public class PhaseControlViewModelTests
         Assert.DoesNotContain("Anna is picking", vm.StatusGuidance);
         Assert.True(vm.NextPhaseCommand.CanExecute(null));
 
-        vm.ApplyPickWaiting(new PlayerSummary { Id = Guid.NewGuid(), Name = "Bela" });
+        vm.ApplyPickWaiting(new PickWaitingDto(
+            new PlayerSummary { Id = Guid.NewGuid(), Name = "Bela" },
+            DateTimeOffset.UtcNow.AddSeconds(20),
+            PickPurpose.ConquestClaim));
         Assert.Contains("Bela is picking", vm.StatusGuidance);
         vm.SetRoundOpen(true);
         Assert.Equal("", vm.ActivePickerName);
 
         vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Conquest });
-        vm.ApplyPickWaiting(new PlayerSummary { Id = Guid.NewGuid(), Name = "Cili" });
+        vm.ApplyPickWaiting(new PickWaitingDto(
+            new PlayerSummary { Id = Guid.NewGuid(), Name = "Cili" },
+            DateTimeOffset.UtcNow.AddSeconds(20),
+            PickPurpose.ConquestClaim));
         vm.ApplyPhaseChanged(GamePhase.Results);
         Assert.Equal("", vm.ActivePickerName);
     }
@@ -213,7 +222,10 @@ public class PhaseControlViewModelTests
         vm.SetConnectionState(true);
         vm.ApplyPhaseChanged(GamePhase.Conquest);
         vm.SetRoundOpen(true);
-        vm.ApplyPickWaiting(new PlayerSummary { Id = p1, Name = "Anna" });
+        vm.ApplyPickWaiting(new PickWaitingDto(
+            new PlayerSummary { Id = p1, Name = "Anna" },
+            DateTimeOffset.UtcNow.AddSeconds(20),
+            PickPurpose.ConquestClaim));
 
         vm.ApplyGameFinished(new GameFinishedDto(
             [new FinalStanding { Rank = 1, PlayerId = p1, Name = "Anna", Score = 400, TerritoryCount = 2 }],
@@ -260,6 +272,102 @@ public class PhaseControlViewModelTests
         Assert.Equal("This action is not supported by the connected server yet.",
             HostErrorFormatter.FormatMessage("Failed to invoke 'AdvancePhase' due to an error on the server. HubException: Method does not exist."));
         Assert.Equal("Custom REST error", HostErrorFormatter.FormatMessage("  Custom REST error  "));
+    }
+
+    [Fact]
+    public void PickCountdown_TracksRemainingTimeFromPickWaitingAndRoomStateAndClearsOnResolution()
+    {
+        var t0 = new DateTimeOffset(2026, 11, 27, 12, 0, 0, TimeSpan.Zero);
+        var time = new FakeTimeProvider(t0);
+        var vm = new PhaseControlViewModel(new FakeRoomControlClient(), timeProvider: time);
+        var settings = new RoomSettings { PickTimeoutSeconds = 20 };
+        vm.SetRoomOpened(settings);
+        vm.SetConnectionState(true);
+        vm.ApplyPhaseChanged(GamePhase.BaseSelection);
+
+        var anna = new PlayerSummary { Id = Guid.NewGuid(), Name = "Anna" };
+        vm.ApplyPickWaiting(new PickWaitingDto(anna, t0.AddSeconds(20), PickPurpose.Base));
+
+        Assert.True(vm.HasActivePickCountdown);
+        Assert.Equal("20 s", vm.PickCountdownText);
+        Assert.Equal(1.0, vm.PickTimeRemainingFraction, 3);
+        Assert.Equal("Anna is picking a base…", vm.StatusGuidance);
+
+        time.Advance(TimeSpan.FromSeconds(5));
+        vm.RefreshPickCountdown();
+        Assert.Equal("15 s", vm.PickCountdownText);
+        Assert.Equal(0.75, vm.PickTimeRemainingFraction, 3);
+
+        time.Advance(TimeSpan.FromSeconds(20));
+        vm.RefreshPickCountdown();
+        Assert.Equal("0 s", vm.PickCountdownText);
+        Assert.Equal(0.0, vm.PickTimeRemainingFraction, 3);
+
+        // Clears on MapUpdated
+        vm.ApplyMapUpdated(new MapUpdate([], []));
+        Assert.False(vm.HasActivePickCountdown);
+        Assert.Equal("", vm.PickCountdownText);
+
+        // Restores from RoomState and adjusts via SyncClock
+        var bela = new PlayerSummary { Id = Guid.NewGuid(), Name = "Bela", Connected = true };
+        vm.ApplyRoomState(new RoomStateDto
+        {
+            RoomCode = "123456",
+            Phase = GamePhase.BaseSelection,
+            Settings = settings,
+            Players = [anna, bela],
+            CurrentPick = new CurrentPickDto
+            {
+                PickerPlayerId = bela.Id,
+                PickDeadlineUtc = t0.AddSeconds(50),
+                Purpose = PickPurpose.Base,
+            },
+            ServerUtcNow = t0.AddSeconds(30),
+        });
+        Assert.True(vm.HasActivePickCountdown);
+        Assert.Equal("20 s", vm.PickCountdownText);
+        Assert.Equal("Bela is picking a base…", vm.StatusGuidance);
+
+        vm.SyncClock(t0.AddSeconds(40), TimeSpan.FromSeconds(2));
+        Assert.Equal("8 s", vm.PickCountdownText);
+
+        // Clears on PhaseChanged, SetRoundOpen, ClearPicker, ApplyGameFinished, ClearRoom
+        vm.ApplyPhaseChanged(GamePhase.Conquest);
+        Assert.False(vm.HasActivePickCountdown);
+
+        vm.ApplyPickWaiting(new PickWaitingDto(anna, t0.AddSeconds(70), PickPurpose.ConquestClaim));
+        Assert.Equal("Anna is picking a tile to claim…", vm.StatusGuidance);
+        vm.SetRoundOpen(true);
+        Assert.False(vm.HasActivePickCountdown);
+
+        vm.RecordRoundClosed(new RoundClosedDto { RoundId = Guid.NewGuid(), Kind = RoundKind.Conquest });
+        vm.ApplyPhaseChanged(GamePhase.Expansion);
+        vm.ApplyPickWaiting(new PickWaitingDto(bela, t0.AddSeconds(90), PickPurpose.Expansion));
+        Assert.Equal("Bela is picking a tile…", vm.StatusGuidance);
+        vm.ClearPicker();
+        Assert.False(vm.HasActivePickCountdown);
+
+        vm.ApplyPhaseChanged(GamePhase.Duel);
+        vm.ApplyPickWaiting(new PickWaitingDto(anna, t0.AddSeconds(110), PickPurpose.DuelTarget));
+        Assert.Equal("Anna is picking a duel target…", vm.StatusGuidance);
+        vm.ApplyGameFinished(new GameFinishedDto([], new MapDto(0, 0, [])));
+        Assert.False(vm.HasActivePickCountdown);
+
+        vm.ApplyPickWaiting(new PickWaitingDto(anna, t0.AddSeconds(120), PickPurpose.Base));
+        vm.ClearRoom();
+        Assert.False(vm.HasActivePickCountdown);
+        Assert.Equal("", vm.PickCountdownText);
+    }
+
+    private sealed class FakeTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = start;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+        public override long GetTimestamp() => _utcNow.UtcTicks;
+
+        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
     }
 }
 

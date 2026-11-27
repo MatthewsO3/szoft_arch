@@ -94,7 +94,7 @@ Groups: `room:{code}` (everyone), `room:{code}:gm` (host), `room:{code}:players`
 | `AnswerCountChanged` | gm group | `AnswerCount` |
 | `RoundClosed` | room | `RoundClosedDto` (ranking + correct answer + winners; per-row `wonTerritoryIndex` / `bonusAwarded`) |
 | `PickRequested` | the picker | `PickRequest { validTerritoryIndices, pickDeadlineUtc, purpose }` |
-| `PickWaiting` | others | `PlayerSummary` (who is choosing) |
+| `PickWaiting` | others | `PickWaitingDto { picker, pickDeadlineUtc, purpose }` (who is choosing, deadline, and purpose) |
 | `ScoreboardUpdated` | room | `ScoreEntry[]` (Duel bonus with no cell change) |
 | `GameFinished` | room | `GameFinishedDto` |
 | `Kicked` | the kicked player | – (client should drop its session) |
@@ -213,7 +213,7 @@ Initial set; extend as needed and keep in sync with the client:
 - **Score:** `Σ value` of owned territories **plus** accumulated Duel bonus. `MapUpdate.Scoreboard` and `RoomState.Scoreboard`
   are sorted by score, then territory count, then turn position, then join order.
 - **Base selection:** in turn order each player is asked `PickRequested { ValidTerritoryIndices, PickDeadlineUtc, Purpose = Base }`;
-  everybody else gets `PickWaiting(picker)`. The picker answers `PickTerritory(index)` (errors `NotYourPick` / `InvalidPick`). Valid
+  everybody else gets `PickWaiting(PickWaitingDto)` carrying picker, deadline, and purpose. The picker answers `PickTerritory(index)` (errors `NotYourPick` / `InvalidPick`). Valid
   cells are all free tiles, or with `DisallowAdjacentBases` those touching no base (dropped if that leaves nothing). Each assignment
   is announced with `MapUpdated` (`IsBase = true`, `Value = BaseValue`, `Health = BaseHealth`).
 - **Timeout:** after `PickTimeoutSeconds` the server assigns a random valid territory (also for offline players) and moves on;

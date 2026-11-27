@@ -63,9 +63,19 @@
     <!-- Map / base selection -->
     <section id="screen-map" class="screen" hidden aria-label="Map">
       <h1 id="map-title">Map</h1>
-      <p class="countdown" id="map-time"></p>
+      <p class="countdown" id="map-time" aria-label="Pick time remaining"></p>
+      <div id="map-progress" class="map-progress" hidden aria-hidden="true">
+        <div id="map-progress-fill" class="map-progress-fill"></div>
+      </div>
       <p id="map-status" role="status" aria-live="polite" class="muted"></p>
       <div id="map-grid" class="map-grid"></div>
+      <div id="map-confirm-bar" class="map-confirm" hidden>
+        <p id="map-selected-label" class="map-selected-label"></p>
+        <div class="map-confirm-actions">
+          <button id="map-confirm-btn" type="button" disabled>Confirm</button>
+          <button id="map-cancel-btn" type="button" class="secondary" hidden>Cancel</button>
+        </div>
+      </div>
       <ul id="map-scores" class="players"></ul>
     </section>
   </main>

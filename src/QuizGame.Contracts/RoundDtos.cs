@@ -74,6 +74,9 @@ public sealed record RoundClosedDto
 /// <summary>Sent to the current picker/claimer (plan §6.3 PickRequested). The purpose depends on the phase.</summary>
 public sealed record PickRequest(IReadOnlyList<int> ValidTerritoryIndices, DateTimeOffset PickDeadlineUtc, PickPurpose Purpose);
 
+/// <summary>Sent to everyone except the current picker (plan §6.3 PickWaiting): who is choosing and by when.</summary>
+public sealed record PickWaitingDto(PlayerSummary Picker, DateTimeOffset PickDeadlineUtc, PickPurpose Purpose);
+
 /// <summary>Why a player is being asked to choose a territory.</summary>
 public enum PickPurpose
 {

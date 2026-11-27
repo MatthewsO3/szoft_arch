@@ -76,6 +76,7 @@ function setConnState(state) {
   connEl.dataset.state = state;
   lobby.showOffline(state === 'offline');
   question.setOnline(state === 'online');
+  map.setOnline(state === 'online');
   document.getElementById('game-offline').hidden = state === 'online';
   if (state === 'online') syncClock();
 }
@@ -118,11 +119,12 @@ async function connect() {
   const handlers = {
     onState: setConnState,
     RoomState: applyState,
-    QuestionStarted: (data) => { question.start(data); show('question'); },
+    QuestionStarted: (data) => { map.clearPick(); question.start(data); show('question'); },
+    PhaseChanged: (phase) => map.phaseChanged(phase),
     DuelAnnounced: (data) => { map.duelAnnounced(data); show('map'); },
     MapUpdated: (data) => { map.update(data); },
     PickRequested: (req) => { map.pickRequested(req); show('map'); },
-    PickWaiting: (player) => { map.pickWaiting(player); show('map'); },
+    PickWaiting: (waiting) => { map.pickWaiting(waiting); show('map'); },
     GameFinished: (data) => { map.gameFinished(data); show('map'); },
     RoundClosed: (data) => { if (question.close(data)) show('question'); },
     PlayerJoined: (player) => lobby.upsert(player),
