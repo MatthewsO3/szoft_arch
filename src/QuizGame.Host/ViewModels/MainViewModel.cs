@@ -131,11 +131,15 @@ public sealed class MainViewModel : ViewModelBase
         });
         _connection.QuestionStarted += q => OnUi(() =>
         {
+            var duelHeader = PhaseControl.Phase == GamePhase.Duel && _duelNomination is { } nom
+                ? Map.FormatDuelHeader(nom)
+                : null;
+            if (duelHeader is null) Map.ClearDuelTarget();
             _duelNomination = null;
             _questionSent = true;
             _waitOverlayDismissed = false;
             Map.ClearPicker();
-            Question.Start(q);
+            Question.Start(q, duelHeader);
             _roundOpen = true;
             AnswerProgress = "";
             PhaseControl.SetRoundOpen(true);
@@ -149,6 +153,7 @@ public sealed class MainViewModel : ViewModelBase
         });
         _connection.RoundClosed += r => OnUi(() =>
         {
+            Map.ClearDuelTarget();
             Question.Close(r);
             _roundOpen = false;
             _waitOverlayDismissed = false;
@@ -175,11 +180,12 @@ public sealed class MainViewModel : ViewModelBase
         _connection.DuelNominated += nomination => OnUi(() =>
         {
             _duelNomination = nomination;
-            Map.ClearPicker();
+            Map.ApplyDuelNomination(nomination);
             PhaseControl.ClearPicker();
             RefreshRoundCommands();
         });
         _connection.MapUpdated += update => OnUi(() => { Map.ApplyMapUpdated(update); PhaseControl.ApplyMapUpdated(update); });
+        _connection.ScoreboardUpdated += scores => OnUi(() => Map.ApplyScoreboardUpdated(scores));
         _connection.PickWaiting += waiting => OnUi(() => { Map.ApplyPickWaiting(waiting); PhaseControl.ApplyPickWaiting(waiting); });
         _connection.GameFinished += finished => OnUi(() =>
         {
@@ -219,6 +225,14 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
+    public bool HasDuelNomination => PhaseControl.Phase == GamePhase.Duel && _duelNomination is not null && !_roundOpen;
+    public string DuelNominationText => _duelNomination is { } nomination
+        ? $"Duel nominated: {Map.DescribeDuel(nomination)} — select a multiple-choice question to confirm."
+        : "";
+    public string SendQuestionButtonText => PhaseControl.Phase == GamePhase.Duel && _duelNomination is not null
+        ? "Confirm duel & send question"
+        : "Send selected question";
+
     public bool ShowWaitForAnswersOverlay => (_roundOpen || _questionSent) && !_waitOverlayDismissed;
     public string WaitOverlayText => _roundOpen
         ? string.IsNullOrWhiteSpace(AnswerProgress)
@@ -226,13 +240,18 @@ public sealed class MainViewModel : ViewModelBase
             : $"Wait for answers… {AnswerProgress[9..]}"
         : PhaseControl.Phase == GamePhase.Expansion
             ? "Wait for the winning player to select a territory…"
-            : "Wait for the players to finish their selection…";
+            : PhaseControl.Phase == GamePhase.Duel
+                ? "Wait for the active player to nominate a duel target…"
+                : "Wait for the players to finish their selection…";
 
     private void RefreshRoundCommands()
     {
         ((AsyncRelayCommand)SendQuestionCommand).RaiseCanExecuteChanged();
         ((AsyncRelayCommand)CloseRoundCommand).RaiseCanExecuteChanged();
         RaiseQuestionSelectionPrompt();
+        Raise(nameof(HasDuelNomination));
+        Raise(nameof(DuelNominationText));
+        Raise(nameof(SendQuestionButtonText));
         Raise(nameof(ShowWaitForAnswersOverlay));
         Raise(nameof(WaitOverlayText));
     }

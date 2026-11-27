@@ -210,7 +210,7 @@ public sealed partial class GameRoom
                 GamePhase.BaseSelection when _basesComplete => GamePhase.Conquest,
                 GamePhase.Conquest when PhaseRoundsExhausted || mapFull => GamePhase.Expansion,
                 GamePhase.Expansion when mapFull => GamePhase.Duel,
-                GamePhase.Duel when PhaseRoundsExhausted || OneBaseHolderRemains() => GamePhase.Results,
+                GamePhase.Duel when PhaseRoundsExhausted || OneBaseHolderRemains() || NoValidDuelTargetRemains() => GamePhase.Results,
                 _ => null
             };
         }
@@ -429,6 +429,11 @@ public sealed partial class GameRoom
     }
 
     private Guid? ActivePlayerCore() => _turnOrder.FirstOrDefault(id => _players.Any(p => p.Id == id)) is var id && id != Guid.Empty ? id : null;
+
+    private bool NoValidDuelTargetRemains() =>
+        _map is { } map && !_turnOrder
+            .Where(id => _players.Any(p => p.Id == id))
+            .Any(id => MapService.ValidDuelTargets(map, id).Count > 0);
 
     // ---- player removal ----
 
