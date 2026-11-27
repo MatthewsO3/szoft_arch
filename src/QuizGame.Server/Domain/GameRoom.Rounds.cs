@@ -158,6 +158,25 @@ public sealed partial class GameRoom
         get { lock (_gate) return _round is not null; }
     }
 
+    /// <summary>Authoritative host turn: true only when a question may be sent immediately.</summary>
+    public bool CanSendQuestion()
+    {
+        lock (_gate)
+        {
+            if (_round is not null || _pick is not null || _pickQueue.Count > 0)
+                return false;
+
+            return _phase switch
+            {
+                GamePhase.Conquest => _claims.Count == 0 && _conquestRound < Settings.ConquestRounds
+                    && _map is { } conquestMap && MapService.FreeTerritories(conquestMap).Count > 0,
+                GamePhase.Expansion => _map is { } expansionMap && MapService.FreeTerritories(expansionMap).Count > 0,
+                GamePhase.Duel => _nomination is not null && _duelRound < Settings.DuelRounds && !OneBaseHolderRemains(),
+                _ => false,
+            };
+        }
+    }
+
     // ---- Conquest ----
 
     /// <summary>Starts the claim stage of a Conquest round: everyone claims a free tile before the question opens.</summary>

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Media.Animation;
 using QuizGame.Host.ViewModels;
 
 namespace QuizGame.Host;
@@ -13,11 +14,24 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _viewModel;
+        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
 
     // PasswordBox.Password is deliberately not bindable, so it is pushed into the view model here.
     private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e) =>
         _viewModel.Password = ((System.Windows.Controls.PasswordBox)sender).Password;
+
+    private void CopyRoomCode_Click(object sender, RoutedEventArgs e) =>
+        PlayRoomCodeAnimation();
+
+    private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.RoomCode) && _viewModel.HasRoom)
+            PlayRoomCodeAnimation();
+    }
+
+    private void PlayRoomCodeAnimation() =>
+        ((Storyboard)FindResource("PopInAnimation")).Clone().Begin(RoomCodeText);
 
     private void OpenQuestionWindow(object sender, RoutedEventArgs e)
     {

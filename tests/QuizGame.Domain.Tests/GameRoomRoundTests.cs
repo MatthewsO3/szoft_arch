@@ -102,6 +102,23 @@ public class GameRoomRoundTests
     }
 
     [Fact]
+    public void Host_question_turn_waits_for_expansion_winner_pick()
+    {
+        var (room, _, _, _) = Room(GamePhase.Expansion);
+        Assert.True(room.CanSendQuestion());
+
+        var round = room.TryStartExpansionRound(Est(), Make.T0).Round!;
+        Assert.False(room.CanSendQuestion());
+        room.TrySubmitAnswer(round.ParticipantIds[0], Num(round, 100m), Make.T0, Grace);
+
+        var pick = room.CloseRound(round.RoundId, Make.T0)!.ExpansionPick!;
+        Assert.False(room.CanSendQuestion());
+
+        room.TryPick(pick.Picker.Id, pick.ValidTerritoryIndices[0], Make.T0);
+        Assert.True(room.CanSendQuestion());
+    }
+
+    [Fact]
     public void Full_map_ends_conquest_early_and_passes_through_expansion()
     {
         var (room, _, _, _) = Room(settings: new RoomSettings { ConquestRounds = 100 });

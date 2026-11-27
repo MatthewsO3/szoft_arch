@@ -72,6 +72,7 @@ public sealed class RoundCoordinator(
 
         _pendingConquestQuestion[room.Code] = question.Id;
         await phases.StartConquestClaimsCoreAsync(room); // asks the first claimer; OpenConquestQuestionCoreAsync fires when all are in
+        await phases.PublishQuestionAvailabilityCoreAsync(room);
         return null;
     }
 
@@ -165,6 +166,7 @@ public sealed class RoundCoordinator(
         var code = room.Code;
         var forPlayer = round.ForPlayer();
 
+        await phases.PublishQuestionAvailabilityCoreAsync(room);
         await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.QuestionStarted, round.ForHost());
         await hub.Clients.Group(GroupNames.Gm(code)).SendAsync(HubNames.Events.AnswerCountChanged,
             new AnswerCount(0, round.ParticipantIds.Count));
