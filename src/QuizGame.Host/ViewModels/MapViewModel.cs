@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Windows.Media;
+using System.Windows.Threading;
 using QuizGame.Contracts;
 
 namespace QuizGame.Host.ViewModels;
@@ -67,8 +69,9 @@ public sealed record MapScoreRow(int Position, string Name, int Score, int Terri
 /// View model of the projected map window (plan §9.2): the territory grid, scores and who is picking.
 /// Fed by room state, <c>MapUpdated</c>, <c>PickWaiting</c>, <c>PhaseChanged</c> and <c>GameFinished</c>.
 /// </summary>
-public sealed class MapViewModel : ViewModelBase
+public sealed class MapViewModel : ViewModelBase, IDisposable
 {
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly Dictionary<Guid, PlayerSummary> _players = [];
     private readonly Dictionary<int, MapCellItem> _cells = [];
     private readonly Dictionary<int, TerritoryDto> _territories = [];
@@ -79,6 +82,15 @@ public sealed class MapViewModel : ViewModelBase
     private string _pickerName = "";
     private bool _finished;
     private string _connectionStatus = "";
+    private DateTimeOffset _serverTime = DateTimeOffset.UtcNow;
+    private long _anchor = Stopwatch.GetTimestamp();
+    private DateTimeOffset? _pickDeadlineUtc;
+    private PickPurpose? _pickPurpose;
+    private int _pickTimeoutSeconds = 20;
+    private string _pickCountdown = "";
+    private double _pickTimeRemainingFraction;
+
+    public MapViewModel() => _timer.Tick += (_, _) => UpdateCountdown();
 
     /// <summary>Raised when the projector map should be brought up (base selection starts).</summary>
     public event Action? OpenRequested;
@@ -90,12 +102,17 @@ public sealed class MapViewModel : ViewModelBase
     public int Cols { get => _cols; private set => Set(ref _cols, value); }
     public bool HasMap => Cells.Count > 0;
     public string ConnectionStatus { get => _connectionStatus; set => Set(ref _connectionStatus, value); }
+    public string PickCountdown { get => _pickCountdown; private set => Set(ref _pickCountdown, value); }
+    public double PickTimeRemainingFraction { get => _pickTimeRemainingFraction; private set => Set(ref _pickTimeRemainingFraction, value); }
+    public bool HasActivePickCountdown => _pickDeadlineUtc is not null && !_finished;
 
     public string Title => _finished ? "Final map" : _phase switch
     {
         GamePhase.Lobby => "Waiting for the game to start",
         GamePhase.BaseSelection => "Base selection",
         GamePhase.Conquest => "Conquest",
+        GamePhase.Expansion => "Expansion",
+        GamePhase.Duel => "Duel",
         GamePhase.Results => "Final map",
         _ => "",
     };
@@ -105,12 +122,20 @@ public sealed class MapViewModel : ViewModelBase
         get
         {
             if (_finished || _phase == GamePhase.Results) return "Game over";
+            if (_pickerName.Length > 0)
+            {
+                return _pickPurpose switch
+                {
+                    PickPurpose.Base => $"{_pickerName} is picking a base…",
+                    PickPurpose.ConquestClaim => $"{_pickerName} is claiming a tile…",
+                    PickPurpose.Expansion => $"{_pickerName} is picking a tile…",
+                    PickPurpose.DuelTarget => $"{_pickerName} is choosing a duel target…",
+                    _ => $"{_pickerName} is picking a territory…",
+                };
+            }
             if (_phase == GamePhase.Lobby) return HasMap ? "" : "Players are joining…";
             if (_phase == GamePhase.BaseSelection)
-            {
-                if (_pickerName.Length > 0) return $"{_pickerName} is picking a base…";
                 return AllBasesPlaced ? "All bases are placed" : "Waiting for the base-order round…";
-            }
             return "";
         }
     }
@@ -118,15 +143,41 @@ public sealed class MapViewModel : ViewModelBase
     private bool AllBasesPlaced =>
         _players.Count > 0 && _territories.Values.Count(t => t.IsBase && t.OwnerPlayerId is not null) >= _players.Count;
 
+    public void SyncClock(DateTimeOffset utc, TimeSpan latency = default)
+    {
+        _serverTime = utc + latency;
+        _anchor = Stopwatch.GetTimestamp();
+        UpdateCountdown();
+    }
+
+    public void ApplySettings(RoomSettings settings)
+    {
+        _pickTimeoutSeconds = Math.Max(1, settings.PickTimeoutSeconds);
+        UpdateCountdown();
+    }
+
     public void ApplyRoomState(RoomStateDto state)
     {
+        SyncClock(state.ServerUtcNow);
+        _pickTimeoutSeconds = Math.Max(1, state.Settings.PickTimeoutSeconds);
         _players.Clear();
         foreach (var p in state.Players) _players[p.Id] = p;
         _phase = state.Phase;
         _finished = state.Phase == GamePhase.Results;
-        SetPicker(state.CurrentPick?.PickerPlayerId);
+        if (state.CurrentPick is { } pick && !_finished)
+        {
+            SetPicker(pick.PickerPlayerId);
+            _pickDeadlineUtc = pick.PickDeadlineUtc;
+            _pickPurpose = pick.Purpose;
+            _timer.Start();
+        }
+        else
+        {
+            ClearActivePickState();
+        }
         ApplyMap(state.Map);
         ApplyScores(state.Scoreboard);
+        UpdateCountdown();
         RaiseHeader();
     }
 
@@ -145,7 +196,8 @@ public sealed class MapViewModel : ViewModelBase
     public void ApplyPhaseChanged(GamePhase phase)
     {
         _phase = phase;
-        if (phase != GamePhase.BaseSelection) SetPicker(null);
+        ClearActivePickState();
+        UpdateCountdown();
         RaiseHeader();
         if (phase == GamePhase.BaseSelection) OpenRequested?.Invoke();
     }
@@ -160,20 +212,26 @@ public sealed class MapViewModel : ViewModelBase
         // The first MapUpdated of a game carries every cell; the grid size comes from RoomState (see api-contract).
         if (Cells.Count == 0 && _territories.Count > 0) BuildCells();
         ApplyScores(update.Scoreboard);
-        SetPicker(null);
+        ClearActivePickState();
+        UpdateCountdown();
         RaiseHeader();
     }
 
-    public void ApplyPickWaiting(PlayerSummary picker)
+    public void ApplyPickWaiting(PickWaitingDto waiting)
     {
-        _players[picker.Id] = picker;
-        SetPicker(picker.Id);
+        _players[waiting.Picker.Id] = waiting.Picker;
+        SetPicker(waiting.Picker.Id);
+        _pickDeadlineUtc = waiting.PickDeadlineUtc;
+        _pickPurpose = waiting.Purpose;
+        _timer.Start();
+        UpdateCountdown();
         RaiseHeader();
     }
 
     public void ClearPicker()
     {
-        SetPicker(null);
+        ClearActivePickState();
+        UpdateCountdown();
         RaiseHeader();
     }
 
@@ -181,8 +239,9 @@ public sealed class MapViewModel : ViewModelBase
     {
         _finished = true;
         _phase = GamePhase.Results;
-        SetPicker(null);
+        ClearActivePickState();
         ApplyMap(finished.FinalMap);
+        UpdateCountdown();
         RaiseHeader();
     }
 
@@ -196,9 +255,36 @@ public sealed class MapViewModel : ViewModelBase
         Rows = Cols = 0;
         _phase = GamePhase.Lobby;
         _finished = false;
-        SetPicker(null);
+        ClearActivePickState();
+        UpdateCountdown();
         RaiseHeader();
     }
+
+    private void ClearActivePickState()
+    {
+        _timer.Stop();
+        SetPicker(null);
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
+    }
+
+    private void UpdateCountdown()
+    {
+        if (_pickDeadlineUtc is not { } deadline || _finished)
+        {
+            PickTimeRemainingFraction = 0;
+            PickCountdown = "";
+            Raise(nameof(HasActivePickCountdown));
+            return;
+        }
+
+        var remaining = deadline - (_serverTime + Stopwatch.GetElapsedTime(_anchor));
+        PickTimeRemainingFraction = Math.Clamp(remaining.TotalSeconds / Math.Max(1, _pickTimeoutSeconds), 0, 1);
+        PickCountdown = remaining <= TimeSpan.Zero ? "Time is up — auto-picking…" : $"{(int)Math.Ceiling(remaining.TotalSeconds)} s";
+        Raise(nameof(HasActivePickCountdown));
+    }
+
+    public void Dispose() => _timer.Stop();
 
     private void SetPicker(Guid? id)
     {

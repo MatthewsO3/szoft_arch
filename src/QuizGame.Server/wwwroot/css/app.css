@@ -71,6 +71,25 @@ p button { min-height: 36px; margin: 0 0 0 .5rem; padding: 0 .8rem; }
 #question-status { min-height: 3em; }
 
 /* Map screen */
+#map-time { margin: .2rem 0 .4rem; }
+#map-time:empty { display: none; }
+#map-time.urgent { color: var(--danger); }
+.map-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  overflow: hidden;
+  margin-bottom: .6rem;
+}
+.map-progress-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transition: width 100ms linear, background-color 150ms ease;
+}
+.map-progress-fill.warn { background: var(--warn); }
+.map-progress-fill.urgent { background: var(--danger); }
+
 .map-grid { display: grid; gap: 4px; margin: .8rem 0; }
 .map-grid .cell {
   aspect-ratio: 1; min-height: 0; margin: 0; padding: 0; border-radius: .4rem;
@@ -79,5 +98,34 @@ p button { min-height: 36px; margin: 0 0 0 .5rem; padding: 0 .8rem; }
 .map-grid .cell.owned { color: #000; font-size: 1rem; }
 .map-grid .cell.mine { outline: 2px solid #fff; }
 .map-grid .cell.pickable { outline: 2px solid var(--ok); background: #24402f; animation: pulse 1s infinite alternate; }
+.map-grid .cell.selected {
+  outline: 3px solid var(--accent);
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(76, 141, 255, .65);
+  transform: scale(1.06);
+  position: relative;
+  z-index: 1;
+  animation: none;
+}
+.map-grid .cell.pickable.selected:not(.owned) { background: #274472; }
 .map-grid .cell:disabled { cursor: default; opacity: 1; }
 @keyframes pulse { to { filter: brightness(1.4); } }
+
+.map-confirm {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  border-top: 1px solid #2b3042;
+  padding: .7rem 0 calc(.7rem + env(safe-area-inset-bottom));
+  margin-top: .5rem;
+  z-index: 2;
+}
+.map-selected-label {
+  margin: 0 0 .5rem;
+  font-size: .95rem;
+  font-weight: 600;
+  text-align: center;
+}
+.map-confirm-actions { display: flex; gap: .6rem; }
+.map-confirm-actions button { margin-top: 0; min-height: 48px; }
+#map-confirm-btn { flex: 2; background: var(--ok); color: #0b1410; }
+#map-cancel-btn { flex: 1; }

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using System.Windows.Threading;
 using QuizGame.Contracts;
 using QuizGame.Host.Services;
 
@@ -40,6 +41,7 @@ public sealed class MainViewModel : ViewModelBase
 {
     private readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
     private readonly GameConnection _connection = new();
+    private readonly DispatcherTimer _pickCountdownTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly Action<string> _copyToClipboard;
     private ApiClient? _api;
     private string? _token;
@@ -70,13 +72,20 @@ public sealed class MainViewModel : ViewModelBase
         _copyToClipboard = copyToClipboard ?? (_ => { });
         QuestionBank = new QuestionBankViewModel(questionBankDialogs);
         PhaseControl = new PhaseControlViewModel(_connection, message => ErrorMessage = message);
+        _pickCountdownTimer.Tick += (_, _) => PhaseControl.RefreshPickCountdown();
         PhaseControl.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(PhaseControl.Phase) or nameof(PhaseControl.HasRoom))
                 QuestionBank.SetGamePhase(PhaseControl.HasRoom ? PhaseControl.Phase : null);
+            if (e.PropertyName == nameof(PhaseControl.HasActivePickCountdown))
+                SyncPickTimer();
             RaiseQuestionSelectionPrompt();
         };
-        RoomSettings = new RoomSettingsViewModel(_connection, settings => PhaseControl.ApplySettings(settings));
+        RoomSettings = new RoomSettingsViewModel(_connection, settings =>
+        {
+            PhaseControl.ApplySettings(settings);
+            Map.ApplySettings(settings);
+        });
         RoomSettings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(RoomSettings.HasUnsavedChanges))
@@ -125,6 +134,7 @@ public sealed class MainViewModel : ViewModelBase
             _duelNomination = null;
             _questionSent = true;
             _waitOverlayDismissed = false;
+            Map.ClearPicker();
             Question.Start(q);
             _roundOpen = true;
             AnswerProgress = "";
@@ -146,7 +156,12 @@ public sealed class MainViewModel : ViewModelBase
             RefreshRoundCommands();
         });
         _connection.AnswerCountChanged += c => OnUi(() => AnswerProgress = $"Answered {c.Answered}/{c.Total}");
-        _connection.ClockSynchronized += (utc, latency) => OnUi(() => Question.SyncClock(utc, latency));
+        _connection.ClockSynchronized += (utc, latency) => OnUi(() =>
+        {
+            Question.SyncClock(utc, latency);
+            Map.SyncClock(utc, latency);
+            PhaseControl.SyncClock(utc, latency);
+        });
         _connection.PhaseChanged += phase => OnUi(() =>
         {
             _duelNomination = null;
@@ -165,7 +180,7 @@ public sealed class MainViewModel : ViewModelBase
             RefreshRoundCommands();
         });
         _connection.MapUpdated += update => OnUi(() => { Map.ApplyMapUpdated(update); PhaseControl.ApplyMapUpdated(update); });
-        _connection.PickWaiting += picker => OnUi(() => { Map.ApplyPickWaiting(picker); PhaseControl.ApplyPickWaiting(picker); });
+        _connection.PickWaiting += waiting => OnUi(() => { Map.ApplyPickWaiting(waiting); PhaseControl.ApplyPickWaiting(waiting); });
         _connection.GameFinished += finished => OnUi(() =>
         {
             _roundOpen = false;
@@ -362,6 +377,7 @@ public sealed class MainViewModel : ViewModelBase
         Players.Clear();
         Raise(nameof(PlayerCountText));
         RoomSettings.SetRoomCreated(settings);
+        Map.ApplySettings(settings);
         PhaseControl.SetRoomOpened(settings);
         PhaseControl.SetPlayerCounts(0, 0);
 
@@ -478,9 +494,17 @@ public sealed class MainViewModel : ViewModelBase
     private void SyncPlayerCounts() =>
         PhaseControl.SetPlayerCounts(Players.Count, Players.Count(p => p.IsConnected));
 
+    private void SyncPickTimer()
+    {
+        if (PhaseControl.HasActivePickCountdown) _pickCountdownTimer.Start();
+        else _pickCountdownTimer.Stop();
+    }
+
     public Task ShutdownAsync()
     {
+        _pickCountdownTimer.Stop();
         Question.Dispose();
+        Map.Dispose();
         return _connection.StopAsync();
     }
 }

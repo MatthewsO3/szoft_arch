@@ -11,6 +11,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
 {
     private readonly IRoomControlClient _client;
     private readonly Action<string>? _onError;
+    private readonly TimeProvider _time;
     private readonly Dictionary<int, Guid?> _territoryOwners = new();
 
     private bool _hasRoom;
@@ -27,11 +28,21 @@ public sealed class PhaseControlViewModel : ViewModelBase
     private int _ownedTerritories;
     private string _activePickerName = "";
     private bool _hasUnsavedSettings;
+    private DateTimeOffset _serverTime;
+    private long _clockAnchor;
+    private DateTimeOffset? _pickDeadlineUtc;
+    private PickPurpose? _pickPurpose;
+    private int _pickTimeoutSeconds = 20;
+    private string _pickCountdownText = "";
+    private double _pickTimeRemainingFraction;
 
-    public PhaseControlViewModel(IRoomControlClient client, Action<string>? onError = null)
+    public PhaseControlViewModel(IRoomControlClient client, Action<string>? onError = null, TimeProvider? timeProvider = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _onError = onError;
+        _time = timeProvider ?? TimeProvider.System;
+        _serverTime = _time.GetUtcNow();
+        _clockAnchor = _time.GetTimestamp();
 
         StartGameCommand = new AsyncRelayCommand(
             _ => StartGameAsync(),
@@ -137,6 +148,21 @@ public sealed class PhaseControlViewModel : ViewModelBase
         private set => Set(ref _hasUnsavedSettings, value);
     }
 
+    public bool HasActivePickCountdown =>
+        !string.IsNullOrWhiteSpace(ActivePickerName) && _pickDeadlineUtc is not null && !IsRoundOpen && Phase != GamePhase.Results;
+
+    public string PickCountdownText
+    {
+        get => _pickCountdownText;
+        private set => Set(ref _pickCountdownText, value);
+    }
+
+    public double PickTimeRemainingFraction
+    {
+        get => _pickTimeRemainingFraction;
+        private set => Set(ref _pickTimeRemainingFraction, value);
+    }
+
     public string CurrentPhaseLabel => Phase switch
     {
         GamePhase.Lobby => "Lobby",
@@ -213,7 +239,16 @@ public sealed class PhaseControlViewModel : ViewModelBase
             if (IsRoundOpen)
                 return "A question round is open. Close it or wait for answers before changing phases.";
             if (!string.IsNullOrWhiteSpace(ActivePickerName))
-                return $"{ActivePickerName} is picking a territory…";
+            {
+                return _pickPurpose switch
+                {
+                    PickPurpose.Base => $"{ActivePickerName} is picking a base…",
+                    PickPurpose.ConquestClaim => $"{ActivePickerName} is picking a tile to claim…",
+                    PickPurpose.Expansion => $"{ActivePickerName} is picking a tile…",
+                    PickPurpose.DuelTarget => $"{ActivePickerName} is picking a duel target…",
+                    _ => $"{ActivePickerName} is picking a territory…",
+                };
+            }
 
             return Phase switch
             {
@@ -255,6 +290,29 @@ public sealed class PhaseControlViewModel : ViewModelBase
         NotifyAll();
     }
 
+    public void SyncClock(DateTimeOffset serverUtc, TimeSpan latency = default)
+    {
+        _serverTime = serverUtc + latency;
+        _clockAnchor = _time.GetTimestamp();
+        RefreshPickCountdown();
+    }
+
+    public void RefreshPickCountdown()
+    {
+        if (!HasActivePickCountdown)
+        {
+            PickCountdownText = "";
+            PickTimeRemainingFraction = 0;
+            Raise(nameof(HasActivePickCountdown));
+            return;
+        }
+
+        var remaining = _pickDeadlineUtc!.Value - (_serverTime + _time.GetElapsedTime(_clockAnchor));
+        PickTimeRemainingFraction = Math.Clamp(remaining.TotalSeconds / Math.Max(1, _pickTimeoutSeconds), 0, 1);
+        PickCountdownText = remaining <= TimeSpan.Zero ? "0 s" : $"{(int)Math.Ceiling(remaining.TotalSeconds)} s";
+        Raise(nameof(HasActivePickCountdown));
+    }
+
     public void SetRoomOpened(RoomSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -264,10 +322,14 @@ public sealed class PhaseControlViewModel : ViewModelBase
         IsBusy = false;
         MinPlayers = settings.MinPlayers;
         SuggestedMaxRounds = settings.ConquestRounds;
+        _pickTimeoutSeconds = Math.Max(1, settings.PickTimeoutSeconds);
         ConquestRoundsCompleted = 0;
         ActivePickerName = "";
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
         HasUnsavedSettings = false;
         ApplyMapSnapshot(null);
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -281,16 +343,20 @@ public sealed class PhaseControlViewModel : ViewModelBase
         IsRoundOpen = state.CurrentRound is not null;
         MinPlayers = state.Settings.MinPlayers;
         SuggestedMaxRounds = state.Settings.ConquestRounds;
+        _pickTimeoutSeconds = Math.Max(1, state.Settings.PickTimeoutSeconds);
         TotalPlayerCount = state.Players.Count;
         ConnectedPlayerCount = state.Players.Count(p => p.Connected);
         ActivePickerName = state.CurrentPick is { } pick
             ? state.Players.FirstOrDefault(p => p.Id == pick.PickerPlayerId)?.Name ?? "A player"
             : "";
+        _pickDeadlineUtc = state.CurrentPick?.PickDeadlineUtc;
+        _pickPurpose = state.CurrentPick?.Purpose;
 
         if (state.Phase != GamePhase.Conquest || enteringConquest)
             ConquestRoundsCompleted = 0;
 
         ApplyMapSnapshot(state.Map);
+        SyncClock(state.ServerUtcNow);
         NotifyAll();
     }
 
@@ -301,6 +367,9 @@ public sealed class PhaseControlViewModel : ViewModelBase
         if (enteringConquest)
             ConquestRoundsCompleted = 0;
         ActivePickerName = "";
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -309,6 +378,8 @@ public sealed class PhaseControlViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(settings);
         MinPlayers = settings.MinPlayers;
         SuggestedMaxRounds = settings.ConquestRounds;
+        _pickTimeoutSeconds = Math.Max(1, settings.PickTimeoutSeconds);
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -329,7 +400,12 @@ public sealed class PhaseControlViewModel : ViewModelBase
     {
         IsRoundOpen = isOpen;
         if (isOpen)
+        {
             ActivePickerName = "";
+            _pickDeadlineUtc = null;
+            _pickPurpose = null;
+        }
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -339,6 +415,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
         IsRoundOpen = false;
         if (Phase == GamePhase.Conquest)
             ConquestRoundsCompleted++;
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -348,20 +425,29 @@ public sealed class PhaseControlViewModel : ViewModelBase
         foreach (var t in update.ChangedTerritories)
             _territoryOwners[t.Index] = t.OwnerPlayerId;
         ActivePickerName = "";
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
         RecomputeTerritoryCounts();
+        RefreshPickCountdown();
         NotifyAll();
     }
 
-    public void ApplyPickWaiting(PlayerSummary picker)
+    public void ApplyPickWaiting(PickWaitingDto waiting)
     {
-        ArgumentNullException.ThrowIfNull(picker);
-        ActivePickerName = picker.Name;
+        ArgumentNullException.ThrowIfNull(waiting);
+        ActivePickerName = waiting.Picker.Name;
+        _pickDeadlineUtc = waiting.PickDeadlineUtc;
+        _pickPurpose = waiting.Purpose;
+        RefreshPickCountdown();
         NotifyAll();
     }
 
     public void ClearPicker()
     {
         ActivePickerName = "";
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -372,6 +458,9 @@ public sealed class PhaseControlViewModel : ViewModelBase
         Phase = GamePhase.Results;
         IsRoundOpen = false;
         ActivePickerName = "";
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -384,12 +473,16 @@ public sealed class PhaseControlViewModel : ViewModelBase
         IsBusy = false;
         MinPlayers = 2;
         SuggestedMaxRounds = 10;
+        _pickTimeoutSeconds = 20;
         TotalPlayerCount = 0;
         ConnectedPlayerCount = 0;
         ConquestRoundsCompleted = 0;
         ActivePickerName = "";
+        _pickDeadlineUtc = null;
+        _pickPurpose = null;
         HasUnsavedSettings = false;
         ApplyMapSnapshot(null);
+        RefreshPickCountdown();
         NotifyAll();
     }
 
@@ -454,6 +547,7 @@ public sealed class PhaseControlViewModel : ViewModelBase
         Raise(nameof(SuggestEndConquest));
         Raise(nameof(ConquestSuggestionText));
         Raise(nameof(StatusGuidance));
+        Raise(nameof(HasActivePickCountdown));
 
         ((AsyncRelayCommand)StartGameCommand).RaiseCanExecuteChanged();
         ((AsyncRelayCommand)NextPhaseCommand).RaiseCanExecuteChanged();
