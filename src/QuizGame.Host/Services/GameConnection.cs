@@ -24,7 +24,7 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
     public event Action<AnswerCount>? AnswerCountChanged;
     public event Action<GamePhase>? PhaseChanged;
     public event Action<MapUpdate>? MapUpdated;
-    public event Action<PlayerSummary>? PickWaiting;
+    public event Action<PickWaitingDto>? PickWaiting;
     public event Action<IReadOnlyList<ScoreEntry>>? ScoreboardUpdated;
     public event Action<GameFinishedDto>? GameFinished;
     public event Action<DuelNominationDto>? DuelNominated;
@@ -53,7 +53,7 @@ public sealed class GameConnection : IRoomControlClient, IAsyncDisposable
         hub.On<AnswerCount>(HubNames.Events.AnswerCountChanged, c => AnswerCountChanged?.Invoke(c));
         hub.On<GamePhase>(HubNames.Events.PhaseChanged, phase => PhaseChanged?.Invoke(phase));
         hub.On<MapUpdate>(HubNames.Events.MapUpdated, update => MapUpdated?.Invoke(update));
-        hub.On<PlayerSummary>(HubNames.Events.PickWaiting, picker => PickWaiting?.Invoke(picker));
+        hub.On<PickWaitingDto>(HubNames.Events.PickWaiting, waiting => PickWaiting?.Invoke(waiting));
         hub.On<ScoreEntry[]>(HubNames.Events.ScoreboardUpdated, scores => ScoreboardUpdated?.Invoke(scores));
         hub.On<GameFinishedDto>(HubNames.Events.GameFinished, finished => GameFinished?.Invoke(finished));
         hub.On<DuelNominationDto>(HubNames.Events.DuelNominated, nomination => DuelNominated?.Invoke(nomination));

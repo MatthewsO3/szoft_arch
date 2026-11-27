@@ -136,7 +136,7 @@ public sealed class PhaseCoordinator(
         if (playerId == pick.Picker.Id)
             await caller.SendAsync(HubNames.Events.PickRequested, new PickRequest(pick.ValidTerritoryIndices, pick.Deadline, pick.Purpose));
         else
-            await caller.SendAsync(HubNames.Events.PickWaiting, pick.Picker);
+            await caller.SendAsync(HubNames.Events.PickWaiting, new PickWaitingDto(pick.Picker, pick.Deadline, pick.Purpose));
     }
 
     public void Cancel(string roomCode) => CancelTimer(roomCode, null);
@@ -220,7 +220,7 @@ public sealed class PhaseCoordinator(
         await hub.Clients.Clients(pickerConnections).SendAsync(
             HubNames.Events.PickRequested, new PickRequest(pick.ValidTerritoryIndices, pick.Deadline, pick.Purpose));
         await hub.Clients.GroupExcept(GroupNames.Room(room.Code), pickerConnections).SendAsync(
-            HubNames.Events.PickWaiting, pick.Picker);
+            HubNames.Events.PickWaiting, new PickWaitingDto(pick.Picker, pick.Deadline, pick.Purpose));
     }
 
     private async Task PushStateToAllAsync(GameRoom room)
