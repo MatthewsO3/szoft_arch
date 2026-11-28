@@ -1,0 +1,53 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+package "Kliensek" {
+  [Játékmester kliens\n(WPF, MVVM)] as Host
+  [Játékos kliens\n(böngészős webalkalmazás)] as Web
+}
+
+package "QuizGame.Contracts" {
+  [DTO-k, enumok,\nhubnevek, hibakódok] as Contracts
+}
+
+package "Szerver (ASP.NET Core)" {
+  package "Kommunikációs réteg (API)" as API {
+    [REST vezérlők\n(Auth, Rooms, Questions, Categories)] as Rest
+    [GameHub\n(SignalR)] as Hub
+    [Hitelesítés és jogosultság\n(JWT, szerepkörök)] as Auth
+  }
+  package "Játéklogikai réteg (BLL)" as BLL {
+    [Koordinátorok\n(GameRoomManager, PhaseCoordinator,\nRoundCoordinator)] as Coord
+    [Játékdomain\n(GameRoom, GameMap, kiértékelés)] as Domain
+  }
+  package "Adatelérési réteg (DAL)" as DAL {
+    [Tároló interfészek\n(IGameMasterStore, IQuestionBank,\nISessionRecorder)] as Ifaces
+    [EF Core megvalósítás\n(QuizDbContext, entitások, migrációk, seed)] as Ef
+  }
+}
+
+database "PostgreSQL\n(adatbázisréteg)" as DB
+
+Host --> Rest : HTTPS (REST)
+Host --> Hub : WSS (SignalR)
+Web --> Rest : HTTPS (REST)
+Web --> Hub : WSS (SignalR)
+
+Rest --> Auth
+Hub --> Auth
+Rest --> Coord
+Hub --> Coord
+Rest --> Ifaces
+Coord --> Domain
+Coord --> Ifaces
+Coord ..> Hub : események küldése\n(IHubContext)
+
+Ef ..|> Ifaces : megvalósítja
+Ef --> DB : Npgsql
+
+Host ..> Contracts
+Rest ..> Contracts
+Hub ..> Contracts
+@enduml

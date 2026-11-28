@@ -1,0 +1,34 @@
+@startuml
+skinparam shadowing false
+skinparam defaultFontName Arial
+autonumber
+
+actor "Játékmester\nkliens" as Host
+participant "AuthController\n(API)" as Ctrl
+participant "GameMasterAuthenticator\n(BLL)" as Auth
+participant "IGameMasterStore\n(DAL)" as Store
+participant "PasswordHasher" as Hasher
+participant "JwtTokenService" as Jwt
+database "PostgreSQL" as DB
+
+Host -> Ctrl : POST /api/auth/login\n(felhasználónév, jelszó)
+note right of Ctrl : IP-alapú kérésszám-korlát\n(percenként 10)
+Ctrl -> Auth : AuthenticateAsync(...)
+Auth -> Store : FindByUsernameAsync(...)
+Store -> DB : SELECT a normalizált névre
+DB --> Store : játékmester (vagy nincs találat)
+Store --> Auth : GameMasterRecord / null
+Auth -> Hasher : Verify(jelszó, hash)
+note right of Hasher : ismeretlen név esetén is\nugyanannyi ideig tart
+Hasher --> Auth : egyezik / nem egyezik
+
+alt érvényes hitelesítő adatok
+  Auth --> Ctrl : GameMasterRecord
+  Ctrl -> Jwt : CreateGameMasterToken(...)
+  Jwt --> Ctrl : JWT (8 óráig érvényes)
+  Ctrl --> Host : 200 OK\n(token, felhasználónév, lejárat)
+else hibás adatok
+  Auth --> Ctrl : null
+  Ctrl --> Host : 401 Unauthorized\n(InvalidCredentials)
+end
+@enduml
