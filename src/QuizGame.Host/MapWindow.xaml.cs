@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using QuizGame.Host.ViewModels;
 
 namespace QuizGame.Host;
 
@@ -8,7 +9,11 @@ public partial class MapWindow : Window
     private bool _fullscreen;
     private WindowState _previousState;
 
-    public MapWindow() => InitializeComponent();
+    public MapWindow(MapViewModel viewModel)
+    {
+        InitializeComponent();
+        DataContext = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+    }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {

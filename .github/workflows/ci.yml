@@ -18,16 +18,23 @@ jobs:
           dotnet-version: "10.0.x"
 
       # The WPF host (net10.0-windows) can't build on Linux, so CI targets the
-      # cross-platform projects: Contracts, Server, and the domain tests.
+      # cross-platform projects: Contracts, Server, and the net10.0 test projects.
       - name: Restore
         run: |
           dotnet restore src/QuizGame.Server/QuizGame.Server.csproj
           dotnet restore tests/QuizGame.Domain.Tests/QuizGame.Domain.Tests.csproj
+          dotnet restore tests/QuizGame.Host.Tests/QuizGame.Host.Tests.csproj
+          dotnet restore tests/QuizGame.Server.Tests/QuizGame.Server.Tests.csproj
 
       - name: Build
         run: |
           dotnet build src/QuizGame.Server/QuizGame.Server.csproj -c Release --no-restore
           dotnet build tests/QuizGame.Domain.Tests/QuizGame.Domain.Tests.csproj -c Release --no-restore
+          dotnet build tests/QuizGame.Host.Tests/QuizGame.Host.Tests.csproj -c Release --no-restore
+          dotnet build tests/QuizGame.Server.Tests/QuizGame.Server.Tests.csproj -c Release --no-restore
 
       - name: Test
-        run: dotnet test tests/QuizGame.Domain.Tests/QuizGame.Domain.Tests.csproj -c Release --no-build --verbosity normal
+        run: |
+          dotnet test tests/QuizGame.Domain.Tests/QuizGame.Domain.Tests.csproj -c Release --no-build --verbosity normal
+          dotnet test tests/QuizGame.Host.Tests/QuizGame.Host.Tests.csproj -c Release --no-build --verbosity normal
+          dotnet test tests/QuizGame.Server.Tests/QuizGame.Server.Tests.csproj -c Release --no-build --verbosity normal

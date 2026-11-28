@@ -6,13 +6,21 @@ namespace QuizGame.Host;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel _viewModel = new();
+    private readonly MainViewModel _viewModel;
+    private readonly Func<QuestionWindow> _createQuestionWindow;
+    private readonly Func<MapWindow> _createMapWindow;
     private QuestionWindow? _questionWindow;
     private MapWindow? _mapWindow;
 
-    public MainWindow()
+    public MainWindow(
+        MainViewModel viewModel,
+        Func<QuestionWindow> createQuestionWindow,
+        Func<MapWindow> createMapWindow)
     {
         InitializeComponent();
+        _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+        _createQuestionWindow = createQuestionWindow ?? throw new ArgumentNullException(nameof(createQuestionWindow));
+        _createMapWindow = createMapWindow ?? throw new ArgumentNullException(nameof(createMapWindow));
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
@@ -37,7 +45,8 @@ public partial class MainWindow : Window
     {
         if (_questionWindow is null)
         {
-            _questionWindow = new QuestionWindow { Owner = this, DataContext = _viewModel.Question };
+            _questionWindow = _createQuestionWindow();
+            _questionWindow.Owner = this;
             _questionWindow.Closed += (_, _) => _questionWindow = null;
             _questionWindow.Show();
         }
@@ -48,7 +57,8 @@ public partial class MainWindow : Window
     {
         if (_mapWindow is null)
         {
-            _mapWindow = new MapWindow { Owner = this, DataContext = _viewModel.Map };
+            _mapWindow = _createMapWindow();
+            _mapWindow.Owner = this;
             _mapWindow.Closed += (_, _) => _mapWindow = null;
             _mapWindow.Show();
         }

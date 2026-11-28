@@ -1,0 +1,122 @@
+@startuml
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+entity "GameMasters" as GM {
+  * Id : uuid <<PK>>
+  --
+  Username : varchar(64)
+  UsernameKey : varchar(64) <<unique>>
+  PasswordHash : varchar(256)
+  CreatedAt : timestamptz
+}
+
+entity "GameSessions" as GS {
+  * Id : uuid <<PK>>
+  --
+  GameMasterId : uuid <<FK>>
+  RoomCode : varchar(6)
+  CreatedAt : timestamptz
+  EndedAt : timestamptz
+}
+
+entity "Players" as P {
+  * Id : uuid <<PK>>
+  --
+  SessionId : uuid <<FK>>
+  Name : varchar(20)
+  ColorHex : varchar(9)
+  JoinedAt : timestamptz
+  LeftAt : timestamptz
+}
+
+entity "Rounds" as R {
+  * Id : uuid <<PK>>
+  --
+  SessionId : uuid <<FK>>
+  Seq : int
+  Kind : varchar(16)
+  QuestionId : uuid
+  StartedAt : timestamptz
+  Deadline : timestamptz
+  ClosedAt : timestamptz
+  AttackerId : uuid
+  DefenderId : uuid
+  TargetTerritoryIndex : int
+  WinnerPlayerId : uuid
+}
+
+entity "Answers" as A {
+  * Id : uuid <<PK>>
+  --
+  RoundId : uuid <<FK>>
+  PlayerId : uuid
+  ChosenOption : char(1)
+  NumericValue : numeric
+  ReceivedAt : timestamptz
+  IsCorrect : bool
+  Distance : numeric
+  Rank : int
+}
+
+entity "Territories" as T {
+  * Id : uuid <<PK>>
+  --
+  SessionId : uuid <<FK>>
+  Index : int
+  Row : int
+  Col : int
+  Value : int
+  IsBase : bool
+  Health : int
+  OwnerPlayerId : uuid
+}
+
+entity "Categories" as C {
+  * Id : int <<PK>>
+  --
+  Name : varchar(64) <<unique>>
+}
+
+entity "Questions" as Q {
+  * Id : uuid <<PK>>
+  --
+  CategoryId : int <<FK>>
+  OwnerId : uuid <<FK, nullable>>
+  Type : varchar(32)
+  Text : varchar(1000)
+  Difficulty : int
+  TimeLimitSeconds : int
+  CorrectNumber : numeric
+  Unit : varchar(32)
+  IsActive : bool
+  CreatedAt : timestamptz
+}
+
+entity "QuestionOptions" as QO {
+  * Id : uuid <<PK>>
+  --
+  QuestionId : uuid <<FK>>
+  Label : char(1)
+  Text : varchar(500)
+  IsCorrect : bool
+}
+
+GM ||--o{ GS : vezeti
+GS ||--o{ P : tartalmaz
+GS ||--o{ R : tartalmaz
+GS ||--o{ T : tartalmaz
+R ||--o{ A : tartalmaz
+C ||--o{ Q : csoportosít
+Q ||--o{ QO : válaszlehetőségei
+GM |o--o{ Q : tulajdonosa
+
+note bottom of R
+  A QuestionId, valamint a játékos- és
+  mezőhivatkozások szándékosan nem
+  idegen kulcsok, hogy az előzmények
+  írása ne hiúsulhasson meg.
+end note
+@enduml

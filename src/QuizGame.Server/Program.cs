@@ -124,6 +124,8 @@ app.Services.GetRequiredService<RoundCoordinator>().Wire();
 app.Run();
 return 0;
 
+public partial class Program;
+
 /// <summary>Minimal self-probe for the Docker healthcheck.</summary>
 static class HealthProbe
 {

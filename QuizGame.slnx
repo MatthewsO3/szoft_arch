@@ -7,5 +7,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/QuizGame.Domain.Tests/QuizGame.Domain.Tests.csproj" />
     <Project Path="tests/QuizGame.Host.Tests/QuizGame.Host.Tests.csproj" />
+    <Project Path="tests/QuizGame.Server.Tests/QuizGame.Server.Tests.csproj" />
   </Folder>
 </Solution>
